@@ -1,0 +1,32 @@
+# === Core numeric / audio / vision ===
+numpy>=1.24
+opencv-python>=4.9.0.80
+pillow>=10.2.0
+soundfile>=0.12.1
+
+# === Hugging Face image captioning (BLIP) ===
+transformers>=4.45.0
+accelerate>=0.32.0
+huggingface-hub>=0.23.0
+safetensors>=0.4.3
+timm>=0.9.16
+
+# === PyTorch (install GPU/CPU as fits your machine) ===
+# Tip (GPU, CUDA 12.1): uncomment next line to pull CUDA wheels from PyTorch
+--extra-index-url https://download.pytorch.org/whl/cu121
+# torch>=2.3
+
+# === Video editing & bundled ffmpeg binaries (for MoviePy) ===
+# Pinned to 1.x to match your imports (moviepy.editor, moviepy.video.fx.all)
+moviepy==1.0.3
+imageio>=2.34
+imageio-ffmpeg>=0.4.9
+
+# === Kokoro TTS pipeline used by kokoro_heart.py ===
+kokoro>=0.9.4
+
+# === Stable-TS CLI used in run.txt ===
+stable-ts>=2.13.2
+# (stable-ts will pull Whisper; adding explicitly for clarity)
+openai-whisper>=20231117
+flask

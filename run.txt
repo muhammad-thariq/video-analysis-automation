@@ -1,0 +1,15 @@
+python analyze_cat_video.py --video video1.mp4 --out output.txt --fps 1.0
+
+// gpt generate https://chatgpt.com/g/g-p-68deb899824c81919fa37f69a5456aa9-generator/c/68deba65-680c-8323-8a0d-4bffed5efce1
+
+// put into input.txt 
+
+python -u "c:\Users\Thariq\Documents\ITS\PROJECT\PCC-v2\kokoro_heart.py"
+
+stable-ts heart_all.wav --output heart_all.srt --output_format srt --device cuda --language en --word_timestamps True --max_chars 42 --max_words 3
+
+(Get-Content .\heart_all.srt) -replace '#00ff00','#ff00ffff' |  Set-Content .\heart_all.srt -Encoding utf8
+
+python rearrange_9x16.py --input video1.mp4 --output output_9x16_letterbox.mp4 --last 3 --letterbox
+
+python burn_hardsub_fit_ass.py --keep_font_color --ass_color_order rgb  --margin_v_ratio 0.24  --base_scale 0.056
