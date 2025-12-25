@@ -1,6 +1,6 @@
 <div align="center">
     <h1>HM-Tools-AutomatedShorts</h1>
-    <video src="sample_This%20cat%20is%20a%20master%20of%20finding%20fresh%20water.mp4" controls width="300"></video>
+<img width="2553" height="1531" alt="Screenshot 2025-12-25 184327-min" src="https://github.com/user-attachments/assets/ad92022a-0098-4211-900c-6a804c0ee23b" />
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat&logo=pytorch&logoColor=white)
