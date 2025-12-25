@@ -1,15 +1,33 @@
 # Per-second cat activity summary for video1.mp4
 # Model: Salesforce/blip-image-captioning-large
-# Duration (approx): 10 seconds
+# Duration (approx): 28 seconds
 
-00:00 — there is a cat that is standing on a sink with water coming out of it.
-00:01 — there is a cat that is drinking water from a faucet.
-00:02 — A cat araffe drinking water from a faucet in a bathroom sink.
-00:03 — there is a cat that is sitting on a sink with water coming out of it.
-00:04 — there is a cat that is sitting on a sink with a faucet.
-00:05 — araffe cat drinking water from a faucet in a bathroom.
-00:06 — there is a cat that is drinking water from a faucet.
-00:07 — there is a cat that is standing on a counter drinking water.
-00:08 — there is a cat that is drinking water from a faucet.
-00:09 — araffe cat drinking water from a faucet in a bathroom.
-00:10 — araffe cat drinking water from a faucet in a bathroom sink.
+00:00 — woman wearing a face mask petting a cat on the floor.
+00:01 — someone is petting a cat with a face mask on.
+00:02 — woman in a face mask petting a cat on the floor.
+00:03 — woman in white shirt and glasses holding a cat in her hands.
+00:04 — woman in white shirt and glasses petting a cat with a face mask.
+00:05 — woman in white shirt and glasses petting a cat with a face mask.
+00:06 — woman in white shirt and mask petting a cat on the floor.
+00:07 — woman wearing a face mask petting a cat on the floor.
+00:08 — woman wearing a face mask petting a cat on the floor.
+00:09 — woman wearing a face mask petting a cat on the floor.
+00:10 — woman in white shirt and mask petting a cat with a white face mask.
+00:11 — woman in white shirt holding a cat wearing a face mask.
+00:12 — woman in white shirt and mask petting a cat on the floor.
+00:13 — there is a woman wearing a face mask petting a cat.
+00:14 — there is a woman wearing a face mask petting a cat.
+00:15 — there is a woman holding a cat with a white face.
+00:16 — there is a woman holding a cat with a face mask on.
+00:17 — there is a woman holding a cat in her arms.
+00:18 — woman in white shirt holding a cat in her arms.
+00:19 — woman in white shirt holding a cat in front of a bookcase.
+00:20 — woman wearing a face mask holding a cat in her arms.
+00:21 — woman in a white shirt holding a cat wearing a face mask.
+00:22 — woman in a white shirt holding a cat in her arms.
+00:23 — woman in white shirt holding a cat in front of a bookcase.
+00:24 — woman wearing a face mask holding a cat in her arms.
+00:25 — woman in a white shirt holding a cat wearing a face mask.
+00:26 — woman in white shirt holding a cat wearing a face mask.
+00:27 — there is a woman holding a cat wearing a face mask.
+00:28 — woman wearing a mask holding a cat in her arms.

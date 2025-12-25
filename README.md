@@ -1,6 +1,6 @@
-# HM-Tools-YTAutomation
-
 <div align="center">
+    <h1>HM-Tools-AutomatedShorts</h1>
+    <video src="sample_This%20cat%20is%20a%20master%20of%20finding%20fresh%20water.mp4" controls width="300"></video>
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat&logo=pytorch&logoColor=white)
@@ -12,7 +12,7 @@
 ---
 
 ## 📋 Overview
-**HM-Tools-YTAutomation** is a local, modular pipeline designed to automate the creation of vertical short-form content (Shorts/Reels/TikToks) from raw video footage. It leverages state-of-the-art AI models for vision, speech, and audio processing to analyze content, generate narration, and produce polished videos with hardcoded subtitles.
+**HM-Tools-AutomatedShorts** is a local, modular pipeline designed to automate the creation of vertical short-form content (Shorts/Reels/TikToks) from raw video footage. It leverages state-of-the-art AI models for vision, speech, and audio processing to analyze content, generate narration, and produce polished videos with hardcoded subtitles.
 
 ### Core Focus Points
 *   **Intelligent Analysis**: Automatically generates per-second descriptions of video content using the BLIP image captioning model.
@@ -71,7 +71,19 @@ The project operates as a sequential pipeline optimized for local execution on c
     cd HM-Tools-YTAutomation
     ```
 
-2.  Install dependencies (PyTorch with CUDA 12.1 is recommended):
+2.  Create and activate a virtual environment (Recommended):
+    ```bash
+    # Create virtual environment
+    python -m venv .venv
+
+    # Activate on Windows
+    .\venv\Scripts\activate
+
+    # Activate on Linux/macOS
+    source venv/bin/activate
+    ```
+
+3.  Install dependencies (PyTorch with CUDA 12.1 is recommended):
     ```bash
     # Install PyTorch with CUDA support first
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
@@ -132,6 +144,6 @@ python burn_hardsub_fit_ass.py --keep_font_color --ass_color_order rgb --margin_
 
 <div align="center">
 
-*License: MIT &bull; [Back to Top](#hm-tools-ytautomation)*
+*[Back to Top](#hm-tools-ytautomation)*
 
 </div>

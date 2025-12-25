@@ -14,7 +14,7 @@ timm>=0.9.16
 # === PyTorch (install GPU/CPU as fits your machine) ===
 # Tip (GPU, CUDA 12.1): uncomment next line to pull CUDA wheels from PyTorch
 --extra-index-url https://download.pytorch.org/whl/cu121
-# torch>=2.3
+torch>=2.3
 
 # === Video editing & bundled ffmpeg binaries (for MoviePy) ===
 # Pinned to 1.x to match your imports (moviepy.editor, moviepy.video.fx.all)
