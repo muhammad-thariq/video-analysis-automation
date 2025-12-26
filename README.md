@@ -1,10 +1,13 @@
 <div align="center">
     <h1>HM-Tools-AutomatedShorts</h1>
-<img width="2553" height="1531" alt="Screenshot 2025-12-25 184327-min" src="https://github.com/user-attachments/assets/ad92022a-0098-4211-900c-6a804c0ee23b" />
+<img width="2539" height="1526" alt="image" src="https://github.com/user-attachments/assets/af2f4763-aea4-4a01-ac77-d6f0d9b118d9" />
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-5C3EE8?style=flat&logo=opencv&logoColor=white)
+![NumPy](https://img.shields.io/badge/NumPy-013243?style=flat&logo=numpy&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat&logo=pytorch&logoColor=white)
-![Hugging Face](https://img.shields.io/badge/Transformers-FFD21E?style=flat&logo=huggingface&logoColor=black)
+![Hugging Face](https://img.shields.io/badge/Transformers-454545?style=flat&logo=huggingface&logoColor=FFD21E)
+![Whisper](https://img.shields.io/badge/OpenAI%20Whisper-412991?style=flat&logo=openai&logoColor=white)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-007808?style=flat&logo=ffmpeg&logoColor=white)
 
 </div>
@@ -12,7 +15,7 @@
 ---
 
 ## 📋 Overview
-**HM-Tools-AutomatedShorts** is a local, modular pipeline designed to automate the creation of vertical short-form content (Shorts/Reels/TikToks) from raw video footage. It leverages state-of-the-art AI models for vision, speech, and audio processing to analyze content, generate narration, and produce polished videos with hardcoded subtitles.
+**HM-Tools-AutomatedShorts** is a tool designed to automate the creation of vertical short-form content from raw video footage. It leverages AI models for vision, speech, and audio processing to analyze content, generate narration, and produce polished videos with hardcoded subtitles.
 
 ### Core Focus Points
 *   **Intelligent Analysis**: Automatically generates per-second descriptions of video content using the BLIP image captioning model.
@@ -22,7 +25,7 @@
 
 ---
 
-## 🧩 Key Concepts
+## Key Concepts
 
 | Concept | Description |
 | :--- | :--- |
@@ -33,7 +36,7 @@
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 The project operates as a sequential pipeline optimized for local execution on consumer GPUs (e.g., NVIDIA RTX series).
 
@@ -47,7 +50,7 @@ The project operates as a sequential pipeline optimized for local execution on c
 
 ---
 
-## 🧪 Scenarios
+## Scenarios
 
 | Scenario | Objective |
 | :--- | :--- |
@@ -94,7 +97,7 @@ The project operates as a sequential pipeline optimized for local execution on c
 
 ---
 
-## 🚀 Execution
+## Execution
 
 Follow this workflow to generate a video:
 
@@ -144,6 +147,6 @@ python burn_hardsub_fit_ass.py --keep_font_color --ass_color_order rgb --margin_
 
 <div align="center">
 
-*[Back to Top](#hm-tools-ytautomation)*
+*[Back to Top](#hm-tools-automatedshorts)*
 
 </div>
