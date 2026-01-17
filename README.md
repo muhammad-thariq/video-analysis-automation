@@ -1,5 +1,5 @@
 <div align="center">
-    <h1>HM-Tools-AutomatedShorts</h1>
+    <h1>Multimodal AI Content Pipeline</h1>
 
 https://github.com/user-attachments/assets/31bfbcb7-30d6-4e1b-a849-686c7b6bef26
 
@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/31bfbcb7-30d6-4e1b-a849-686c7b6bef26
 ---
 
 ## 📋 Overview
-**HM-Tools-AutomatedShorts** is a tool designed to automate the creation of vertical short-form content from raw video footage. It leverages AI models for vision, speech, and audio processing to analyze content, generate narration, and produce polished videos with hardcoded subtitles.
+**Multimodal AI Content Pipeline** is a tool designed to automate the creation of vertical short-form content from raw video footage. It leverages AI models for vision, speech, and audio processing to analyze content, generate narration, and produce polished videos with hardcoded subtitles.
 
 ### Core Focus Points
 *   **Intelligent Analysis**: Automatically generates per-second descriptions of video content using the BLIP image captioning model.
