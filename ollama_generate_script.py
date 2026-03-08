@@ -15,7 +15,7 @@ if sys.platform == "win32":
 
 # Configuration
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-MODEL_NAME = "deepseek-r1:8b"
+MODEL_NAME = "llama3.1:latest"
 SYSTEM_PROMPT_FILE = "system_prompt.txt"
 INPUT_FILE = "output.txt"
 OUTPUT_FILE = "input.txt"

@@ -1,201 +1,217 @@
 #!/usr/bin/env python3
+"""
+rearrange_9x16.py  —  Pure-FFmpeg video reformatter (no moviepy).
+
+Builds a single FFmpeg complex filtergraph for:
+  1. Timeline rolling  (move last N seconds to the front)
+  2. Looping / trimming (match target audio duration)
+  3. Scaling            (to exact --size)
+  4. Audio mixing       (original @25% + BGM track)
+
+All done in one ffmpeg subprocess call — no frame-by-frame piping.
+"""
+
 import argparse
+import json
 import math
-from typing import Tuple
-from moviepy import * 
-
-from moviepy.editor import (
-    VideoFileClip,
-    AudioFileClip,
-    concatenate_videoclips,
-    CompositeVideoClip,
-    CompositeAudioClip,
-    ColorClip,
-)
-import moviepy.video.fx.all as vfx
-import moviepy.audio.fx.all as afx
+import subprocess
+import sys
 
 
-def parse_ratio(s: str) -> float:
-    s = s.strip()
-    if ":" in s:
-        a, b = s.split(":")
-        return float(a) / float(b)
-    if "/" in s:
-        a, b = s.split("/")
-        return float(a) / float(b)
-    return float(s)
+# ─── ffprobe helpers ────────────────────────────────────────────────
+
+def ffprobe_json(filepath: str, entries: str, select: str = None) -> dict:
+    """Run ffprobe and return parsed JSON."""
+    cmd = ["ffprobe", "-v", "error", "-show_entries", entries, "-of", "json"]
+    if select:
+        cmd += ["-select_streams", select]
+    cmd.append(filepath)
+    r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return json.loads(r.stdout)
 
 
-def make_even(x: int) -> int:
-    return x if x % 2 == 0 else x - 1 if x > 1 else 2
+def get_duration(filepath: str) -> float:
+    info = ffprobe_json(filepath, "format=duration")
+    return float(info["format"]["duration"])
 
 
-def center_crop_to_ratio(clip: VideoFileClip, target_ratio: float):
-    w, h = clip.size
-    cur_ratio = w / h
-    if math.isclose(cur_ratio, target_ratio, rel_tol=1e-3):
-        return clip
+def get_video_info(filepath: str) -> dict:
+    """Return fps, has_audio, and audio sample_rate for the input file."""
+    info = ffprobe_json(filepath, "stream=codec_type,r_frame_rate,sample_rate")
 
-    if cur_ratio > target_ratio:
-        new_w = int(h * target_ratio)
-        x1 = (w - new_w) // 2
-        x2 = x1 + new_w
-        return clip.crop(x1=x1, x2=x2)
+    fps = 30.0
+    has_audio = False
+    sample_rate = 44100
+
+    for s in info.get("streams", []):
+        if s.get("codec_type") == "video":
+            num, den = s.get("r_frame_rate", "30/1").split("/")
+            fps = round(float(num) / float(den), 3)
+        elif s.get("codec_type") == "audio":
+            has_audio = True
+            sample_rate = int(s.get("sample_rate", 44100))
+
+    return {"fps": fps, "has_audio": has_audio, "sample_rate": sample_rate}
+
+
+# ─── filtergraph builder ────────────────────────────────────────────
+
+def build_filtergraph(
+    video_dur: float,
+    target_dur: float,
+    fps: float,
+    out_w: int,
+    out_h: int,
+    last: float,
+    has_audio: bool,
+    sample_rate: int,
+) -> str:
+    """Build the -filter_complex string for ffmpeg."""
+    parts = []
+
+    # ── VIDEO ────────────────────────────────────────────────────────
+    # 1) Roll: move last `last` seconds to the front
+    if last > 0:
+        split_t = video_dur - last
+        parts.append("[0:v]split[_v1][_v2]")
+        parts.append(f"[_v1]trim=start={split_t},setpts=PTS-STARTPTS[_vtail]")
+        parts.append(f"[_v2]trim=end={split_t},setpts=PTS-STARTPTS[_vhead]")
+        parts.append("[_vtail][_vhead]concat=n=2:v=1:a=0[_vrolled]")
+        v = "_vrolled"
     else:
-        new_h = int(w / target_ratio)
-        y1 = (h - new_h) // 2
-        y2 = y1 + new_h
-        return clip.crop(y1=y1, y2=y2)
+        v = "0:v"
 
-
-def letterbox_to_ratio(clip: VideoFileClip, target_ratio: float, bg_color=(0, 0, 0)):
-    w, h = clip.size
-    cur_ratio = w / h
-    if math.isclose(cur_ratio, target_ratio, rel_tol=1e-3):
-        return clip
-
-    if cur_ratio > target_ratio:
-        new_h = int(round(w / target_ratio))
-        new_h = make_even(new_h)
-        canvas = ColorClip(size=(w, new_h), color=bg_color, duration=clip.duration)
-        y = (new_h - h) // 2
-        comp = CompositeVideoClip([canvas, clip.set_position(("center", y))])
-        comp = comp.set_audio(clip.audio)
-        comp.duration = clip.duration
-        comp.fps = clip.fps
-        return comp
+    # 2) Loop (if needed) + trim + scale
+    rolled_dur = video_dur  # rolling preserves duration
+    if rolled_dur < target_dur - 0.01:
+        extra_loops = math.ceil(target_dur / rolled_dur) - 1
+        frame_count = int(round(rolled_dur * fps))
+        parts.append(
+            f"[{v}]loop=loop={extra_loops}:size={frame_count}:start=0,"
+            f"trim=duration={target_dur},setpts=PTS-STARTPTS,"
+            f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos,"
+            f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p[vout]"
+        )
     else:
-        new_w = int(round(h * target_ratio))
-        new_w = make_even(new_w)
-        canvas = ColorClip(size=(new_w, h), color=bg_color, duration=clip.duration)
-        x = (new_w - w) // 2
-        comp = CompositeVideoClip([canvas, clip.set_position((x, "center"))])
-        comp = comp.set_audio(clip.audio)
-        comp.duration = clip.duration
-        comp.fps = clip.fps
-        return comp
-
-
-def resize_to_size(clip: VideoFileClip, size: Tuple[int, int]):
-    w, h = size
-    w, h = make_even(int(w)), make_even(int(h))
-    return clip.resize((w, h))
-
-
-def roll_last_seconds_first(clip: VideoFileClip, last_seconds: float):
-    dur = clip.duration or 0
-    if last_seconds <= 0 or last_seconds >= dur:
-        return clip
-    tail = clip.subclip(dur - last_seconds, dur)
-    head = clip.subclip(0, dur - last_seconds)
-    return concatenate_videoclips([tail, head], method="compose")
-
-
-def force_video_to_duration(clip: VideoFileClip, target_duration: float) -> VideoFileClip:
-    """If clip shorter -> loop to target_duration; if longer -> trim."""
-    cur = clip.duration or 0
-    if abs(cur - target_duration) < 1e-3:
-        return clip
-    if cur < target_duration:
-        # loop video
-        looped = clip.loop(duration=target_duration)
-        # loop audio separately (audio_loop expects an AudioClip, not a VideoFileClip)
-        if clip.audio is not None:
-            looped_audio = clip.audio.fx(afx.audio_loop, duration=target_duration)
-            looped = looped.set_audio(looped_audio)
-        return looped.set_duration(target_duration)
-    else:
-        # longer -> cut
-        return clip.subclip(0, target_duration)
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Convert video to 9:16, move last seconds to start, then mix heart audio + lowered original."
-    )
-    parser.add_argument("--input", "-i", type=str, default="video1.mp4", help="Input video path")
-    parser.add_argument("--output", "-o", type=str, default="output_9x16.mp4", help="Output video path")
-    parser.add_argument("--audio", "-a", type=str, default="heart_all.wav", help="Heartbeat / bgm audio path")
-    parser.add_argument("--ratio", type=str, default="9:16", help="Target aspect ratio, e.g., '9:16'")
-    parser.add_argument("--size", type=str, default="1080x1920", help="Final pixel size WxH, e.g., 1080x1920")
-    parser.add_argument("--last", type=float, default=3.0, help="Seconds to move from end to start (default: 3)")
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--fill", action="store_true", help="Fill the 9:16 frame by center-cropping (default)")
-    mode.add_argument("--letterbox", action="store_true", help="Keep full image with black bars (no cropping)")
-    parser.add_argument("--preset", type=str, default="medium", help="ffmpeg/libx264 preset")
-    parser.add_argument("--crf", type=int, default=18, help="ffmpeg CRF quality (lower=better)")
-    args = parser.parse_args()
-
-    target_ratio = parse_ratio(args.ratio)
-
-    if "x" in args.size.lower():
-        w_str, h_str = args.size.lower().split("x")
-        out_w, out_h = int(w_str), int(h_str)
-    else:
-        raise SystemExit("--size must be like 1080x1920 (WxH).")
-
-    # --- load audio first (this defines target duration) ---
-    heart_audio = AudioFileClip(args.audio)
-    target_dur = heart_audio.duration
-
-    with VideoFileClip(args.input) as clip:
-        # ensure video duration == heart_all.wav duration (your first requirement)
-        clip = force_video_to_duration(clip, target_dur)
-
-        # normalize orientation (force reading)
-        clip = clip.fx(vfx.rotate, 0)
-
-        # aspect
-        if args.letterbox:
-            processed = letterbox_to_ratio(clip, target_ratio)
-        else:
-            processed = center_crop_to_ratio(clip, target_ratio)
-
-        # resize
-        processed = resize_to_size(processed, (out_w, out_h))
-
-        # rearrange time
-        rolled = roll_last_seconds_first(processed, args.last)
-
-        # we want final duration to match audio (in case roll changed anything odd)
-        rolled = rolled.set_duration(target_dur)
-
-        # --- AUDIO MIXING ---
-        # 1) original video audio, lowered to 25% (i.e. 75% lower)
-        if rolled.audio is not None:
-            orig_low = rolled.audio.volumex(0.25).set_duration(target_dur)
-        else:
-            orig_low = None
-
-        # 2) heart_all.wav must also match duration (loop or cut)
-        if heart_audio.duration < target_dur - 1e-3:
-            heart_ready = heart_audio.fx(afx.audio_loop, duration=target_dur).set_duration(target_dur)
-        else:
-            heart_ready = heart_audio.subclip(0, target_dur)
-
-        if orig_low is not None:
-            final_audio = CompositeAudioClip([heart_ready, orig_low]).set_duration(target_dur)
-        else:
-            final_audio = heart_ready.set_duration(target_dur)
-
-        rolled = rolled.set_audio(final_audio)
-
-        ffmpeg_params = ["-movflags", "+faststart", "-crf", str(args.crf)]
-        rolled.write_videofile(
-            args.output,
-            codec="libx264",
-            audio_codec="aac",
-            fps=clip.fps,
-            preset=args.preset,
-            ffmpeg_params=ffmpeg_params,
-            threads=0,
-            verbose=False,
-            logger=None,
-            audio_bitrate="192k",
+        parts.append(
+            f"[{v}]trim=duration={target_dur},setpts=PTS-STARTPTS,"
+            f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos,"
+            f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p[vout]"
         )
 
-    heart_audio.close()
+    # ── AUDIO ────────────────────────────────────────────────────────
+    if has_audio:
+        # Roll the original audio the same way
+        if last > 0:
+            split_t = video_dur - last
+            parts.append("[0:a]asplit[_a1][_a2]")
+            parts.append(f"[_a1]atrim=start={split_t},asetpts=PTS-STARTPTS[_atail]")
+            parts.append(f"[_a2]atrim=end={split_t},asetpts=PTS-STARTPTS[_ahead]")
+            parts.append("[_atail][_ahead]concat=n=2:v=0:a=1[_arolled]")
+            a = "_arolled"
+        else:
+            a = "0:a"
+
+        # Loop / trim + lower to 25 %
+        if rolled_dur < target_dur - 0.01:
+            extra_loops = math.ceil(target_dur / rolled_dur) - 1
+            sample_count = int(round(rolled_dur * sample_rate))
+            parts.append(
+                f"[{a}]aloop=loop={extra_loops}:size={sample_count}:start=0,"
+                f"atrim=duration={target_dur},asetpts=PTS-STARTPTS,"
+                f"volume=0.25[_orig_lo]"
+            )
+        else:
+            parts.append(
+                f"[{a}]atrim=duration={target_dur},asetpts=PTS-STARTPTS,"
+                f"volume=0.25[_orig_lo]"
+            )
+
+        # BGM: just trim to target_dur (it defines the target anyway)
+        parts.append(
+            f"[1:a]atrim=duration={target_dur},asetpts=PTS-STARTPTS[_bgm]"
+        )
+
+        # Mix BGM + lowered original  (normalize=0 keeps volumes as-is)
+        parts.append("[_bgm][_orig_lo]amix=inputs=2:duration=first:normalize=0[aout]")
+    else:
+        # No original audio — BGM only
+        parts.append(
+            f"[1:a]atrim=duration={target_dur},asetpts=PTS-STARTPTS[aout]"
+        )
+
+    return ";\n".join(parts)
+
+
+# ─── main ───────────────────────────────────────────────────────────
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Reformat video: roll timeline, loop/trim to audio, scale, mix audio.  Pure FFmpeg."
+    )
+    ap.add_argument("--input",   "-i", default="video1.mp4",   help="Input video")
+    ap.add_argument("--output",  "-o", default="output_9x16.mp4", help="Output video")
+    ap.add_argument("--audio",   "-a", default="heart_all.wav", help="BGM / voiceover track")
+    ap.add_argument("--size",          default="1080x1920",     help="Output WxH (e.g. 1080x1920)")
+    ap.add_argument("--last",    type=float, default=3.0,       help="Seconds to roll from end → start")
+    ap.add_argument("--preset",        default="medium",        help="x264 preset")
+    ap.add_argument("--crf",     type=int, default=18,          help="x264 CRF (lower = better)")
+    # kept for backward-compat with app.py (ignored)
+    ap.add_argument("--letterbox", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--fill",     action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--ratio",    default=None,        help=argparse.SUPPRESS)
+    args = ap.parse_args()
+
+    # Parse output size
+    if "x" not in args.size.lower():
+        sys.exit("--size must be WxH, e.g. 1080x1920")
+    w_str, h_str = args.size.lower().split("x")
+    out_w, out_h = int(w_str), int(h_str)
+
+    # Probe inputs
+    video_dur = get_duration(args.input)
+    target_dur = get_duration(args.audio)
+    info = get_video_info(args.input)
+    fps = info["fps"]
+    has_audio = info["has_audio"]
+    sr = info["sample_rate"]
+
+    last = args.last
+    if last <= 0 or last >= video_dur:
+        last = 0.0
+
+    print(f"[rearrange] Input : {args.input}  ({video_dur:.2f}s, {fps}fps, audio={'yes' if has_audio else 'no'})")
+    print(f"[rearrange] Audio : {args.audio}  ({target_dur:.2f}s)")
+    print(f"[rearrange] Roll  : last {last:.1f}s -> front")
+    print(f"[rearrange] Output: {args.output}  ({out_w}x{out_h})")
+
+    fg = build_filtergraph(
+        video_dur=video_dur,
+        target_dur=target_dur,
+        fps=fps,
+        out_w=out_w,
+        out_h=out_h,
+        last=last,
+        has_audio=has_audio,
+        sample_rate=sr,
+    )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", args.input,
+        "-i", args.audio,
+        "-filter_complex", fg,
+        "-map", "[vout]",
+        "-map", "[aout]",
+        "-c:v", "libx264", "-preset", args.preset, "-crf", str(args.crf),
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
+        "-threads", "0",
+        args.output,
+    ]
+
+    subprocess.run(cmd, check=True)
+    print(f"[rearrange] Done -> {args.output}")
 
 
 if __name__ == "__main__":

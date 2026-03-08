@@ -162,7 +162,11 @@ def run_cmd(cmd, cwd: Path, step_info):
 
 
 def final_video_name_from_input_txt() -> str | None:
-    """Get the final video filename based on input.txt first line."""
+    """Get the final video filename based on input.txt first line.
+    
+    Must match the truncation logic in burn_hardsub_fit_ass.py:
+    min 5, max 15 words, stop at period after 5 words.
+    """
     input_path = PCC_DIR / UPLOAD_TEXT_NAME
     if not input_path.exists():
         return None
@@ -176,7 +180,20 @@ def final_video_name_from_input_txt() -> str | None:
         return None
     if not first_line:
         return None
-    safe = "".join(ch for ch in first_line if ch not in '<>:"/\\|?*').rstrip(".").strip()
+
+    # Replicate burn_hardsub_fit_ass.py word-truncation logic
+    words = first_line.split()
+    selected_words = []
+    for i, word in enumerate(words):
+        if i >= 15:
+            break
+        selected_words.append(word)
+        if '.' in word and i >= 4:
+            break
+    raw_title = " ".join(selected_words)
+
+    import re
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "", raw_title).strip().rstrip(".")
     if not safe:
         return None
     return f"{safe}.mp4"
@@ -290,23 +307,20 @@ def process_pipeline():
             socketio.emit("processing_error", {"message": "Subtitle generation failed"})
             return
 
-        # Step 5: PowerShell color replacement
+        # Step 5: Color replacement (inline Python — no PowerShell needed)
         step = PIPELINE_STEPS[4]
         emit_step_status(step["id"], "running", step["description"])
-        emit_log(f"▶ Running: PowerShell color replacement")
-        
-        ps_cmd = (
-            r"(Get-Content .\heart_all.srt) -replace '#00ff00','#ff00ffff' | "
-            r"Set-Content .\heart_all.srt -Encoding utf8"
-        )
-        ok, log = run_cmd(
-            ["powershell", "-NoProfile", "-Command", ps_cmd],
-            PCC_DIR,
-            step,
-        )
-        if not ok:
-            emit_log("⚠ PowerShell color replacement had issues (non-critical)")
-            # Don't fail the pipeline for this step
+        emit_log(f"▶ Running: Inline color replacement (#00ff00 → #ff00ffff)")
+        try:
+            srt_path = PCC_DIR / "heart_all.srt"
+            text = srt_path.read_text(encoding="utf-8")
+            text = text.replace("#00ff00", "#ff00ffff")
+            srt_path.write_text(text, encoding="utf-8")
+            emit_step_status(step["id"], "completed", f"{step['name']} completed ✓")
+            emit_progress(step["progress_end"])
+            emit_log(f"✓ {step['name']} completed successfully")
+        except Exception as e:
+            emit_log(f"⚠ Color replacement had issues: {e} (non-critical)")
             emit_step_status(step["id"], "completed", "Color replacement done")
             emit_progress(step["progress_end"])
 

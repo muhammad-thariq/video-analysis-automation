@@ -178,20 +178,40 @@ def main():
     ap.add_argument("--fps", type=int, default=30)
 
     args = ap.parse_args()
+    
     # --- Set video_out from first line of input.txt (if present) ---
-    # Keep everything else unchanged.
     input_title_file = Path("input.txt")
     if input_title_file.exists():
         try:
             first_line = input_title_file.read_text(encoding="utf-8", errors="ignore").splitlines()[0].strip()
         except Exception:
             first_line = ""
-        # Remove characters illegal in Windows/macOS filenames and control chars
-        safe_title = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "", first_line).strip().rstrip(".")
-        if safe_title:
-            # Keep the same directory as the original --video_out argument, only change the filename
-            _out_dir = Path(args.video_out).resolve().parent
-            args.video_out = str((_out_dir / f"{safe_title}.mp4").resolve())
+            
+        if first_line:
+            # 1. Split the text into words
+            words = first_line.split()
+            selected_words = []
+            
+            # 2. Loop through and apply our rules (min 5, max 15, or period)
+            for i, word in enumerate(words):
+                if i >= 15: # Stop strictly at 15 words
+                    break
+                
+                selected_words.append(word)
+                
+                # Stop if we see a period AND we already have at least 5 words (index 4)
+                if '.' in word and i >= 4:
+                    break
+            
+            raw_title = " ".join(selected_words)
+            
+            # 3. Remove characters illegal in Windows/macOS filenames and control chars
+            safe_title = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "", raw_title).strip().rstrip(".")
+            
+            if safe_title:
+                # Keep the same directory as the original --video_out argument, only change the filename
+                _out_dir = Path(args.video_out).resolve().parent
+                args.video_out = str((_out_dir / f"{safe_title}.mp4").resolve())
 
     video_in = Path(args.video_in).resolve()
     srt_in   = Path(args.srt_in).resolve()
@@ -273,12 +293,6 @@ def main():
     tmp_ass = tmp_ass_dir / (srt_in.stem + "_fit.ass")
     tmp_ass.write_text("\n".join(ass_lines), encoding="utf-8")
 
-    # Debug: print the first few lines of the ASS file
-    print("[DEBUG] First few dialogue lines from ASS:")
-    for line in ass_lines[:15]:
-        if line.startswith("Dialogue:"):
-            print(line[:200])
-
     # Windows-safe escaping for subtitles path
     sub_path = tmp_ass.as_posix().replace(':', r'\:').replace("'", r"\'")
     vf = f"subtitles='{sub_path}'"
@@ -300,13 +314,11 @@ def main():
         print(f"[INFO] Inline colour order='{args.ass_color_order}', override_len='{args.ass_override_len}'")
         print(f"[INFO] Temp ASS file saved at: {tmp_ass}")
     finally:
-        # Comment out cleanup so you can inspect the ASS file
-        # try:
-        #     import shutil as _sh
-        #     _sh.rmtree(tmp_ass_dir, ignore_errors=True)
-        # except Exception:
-        #     pass
-        pass
+        try:
+            import shutil as _sh
+            _sh.rmtree(tmp_ass_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

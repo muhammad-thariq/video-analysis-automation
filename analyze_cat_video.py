@@ -125,50 +125,58 @@ def analyze_video(
     if duration_s <= 0:
         duration_s = 20  # fallback
 
+    # --- Phase 1: collect all frames ---
+    step = max(1.0, fps_sample)
+    t = 0.0
+    seen_seconds = set()
+    frames = []       # (sec_int, PIL.Image)
+    sec_order = []     # preserve ordering
+
+    while t < duration_s + 0.5:
+        sec_int = int(round(t))
+        if sec_int in seen_seconds:
+            t += step
+            continue
+
+        frame = read_frame_at_second(cap, sec_int)
+        if frame is None:
+            if sec_int > duration_s - 1:
+                break
+            t += step
+            continue
+
+        frames.append((sec_int, frame))
+        sec_order.append(sec_int)
+        seen_seconds.add(sec_int)
+        t += step
+
+    cap.release()
+
+    if not frames:
+        raise RuntimeError(f"Could not extract any frames from {video_path}")
+
+    # --- Phase 2: batch caption all frames at once ---
     captioner = build_captioner(model_id=model_id)
+    images = [f[1] for f in frames]
+    # HF pipeline natively supports batched list-of-images input on GPU
+    results = captioner(images, max_new_tokens=32, batch_size=len(images))
 
+    # --- Phase 3: write output ---
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-
     with open(out_path, "w", encoding="utf-8") as fout:
         fout.write(f"# Per-second cat activity summary for {os.path.basename(video_path)}\n")
         fout.write(f"# Model: {model_id}\n")
         fout.write(f"# Duration (approx): {duration_s} seconds\n\n")
 
-        step = max(1.0, fps_sample)  # seconds between samples; default 1.0
-        t = 0.0
-        seen_seconds = set()
-
-        while t < duration_s + 0.5:  # slight slack on the end
-            sec_int = int(round(t))
-            if sec_int in seen_seconds:
-                t += step
-                continue
-
-            frame = read_frame_at_second(cap, sec_int)
-            if frame is None:
-                # If seeking failed near the end, break gracefully
-                if sec_int > duration_s - 1:
-                    break
-                t += step
-                continue
-
-            # Generate a caption; keep it brief and cat-focused
-            # Some models accept "max_new_tokens"; for BLIP captioning it's ignored, safe to include.
-            result = captioner(frame, max_new_tokens=32)
+        for (sec_int, _), result in zip(frames, results):
             if isinstance(result, list) and len(result) > 0 and "generated_text" in result[0]:
                 raw_caption = result[0]["generated_text"]
             else:
-                # Fallback to string conversion
                 raw_caption = str(result)
 
             caption = catify_caption(raw_caption)
-
             ts = hhmmss(sec_int)
             fout.write(f"{ts} — {caption}\n")
-            seen_seconds.add(sec_int)
-            t += step
-
-    cap.release()
 
 
 def main():
