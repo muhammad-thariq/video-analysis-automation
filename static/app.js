@@ -4,6 +4,9 @@
 let socket = null;
 let videoFile = null;
 let isProcessing = false;
+let charLockActive = true;  // Toggle default ON
+let lockedCharCount = 0;    // The saved target char count
+let audioGenerated = false; // Whether TTS audio has been generated
 
 // ==========================================
 // DOM ELEMENTS
@@ -16,6 +19,17 @@ const elements = {
   filePreview: document.getElementById('filePreview'),
   removeVideoBtn: document.getElementById('removeVideoBtn'),
   videoTopic: document.getElementById('videoTopic'),
+
+  // Dual preview
+  dualPreviewContainer: document.getElementById('dualPreviewContainer'),
+  completedThumbnail: document.getElementById('completedThumbnail'),
+  completedOverlay: document.getElementById('completedOverlay'),
+  completedVideoPreview: document.getElementById('completedVideoPreview'),
+
+  // Mute toggle
+  muteToggleLabel: document.getElementById('muteToggleLabel'),
+  muteToggle: document.getElementById('muteToggle'),
+  muteIcon: document.getElementById('muteIcon'),
 
   startBtn: document.getElementById('startBtn'),
 
@@ -33,9 +47,18 @@ const elements = {
   charCounter: document.getElementById('charCounter'),
   scriptActions: document.getElementById('scriptActions'),
   btnRegenerate: document.getElementById('btnRegenerate'),
-  btnPolish: document.getElementById('btnPolish'),
-  btnSaveEdit: document.getElementById('btnSaveEdit'),
+  btnExtend: document.getElementById('btnExtend'),
+  btnReduce: document.getElementById('btnReduce'),
   btnApprove: document.getElementById('btnApprove'),
+  approveIcon: document.getElementById('approveIcon'),
+  approveLabel: document.getElementById('approveLabel'),
+  charLockToggle: document.getElementById('charLockToggle'),
+  // Audio player
+  audioPlayer: document.getElementById('audioPlayer'),
+  apPlayBtn: document.getElementById('apPlayBtn'),
+  apTime: document.getElementById('apTime'),
+  apProgress: document.getElementById('apProgress'),
+  apAudio: document.getElementById('apAudio'),
 };
 
 // ==========================================
@@ -74,6 +97,10 @@ function initializeSocket() {
 
   socket.on('script_review', (data) => {
     showScriptForReview(data.script);
+  });
+
+  socket.on('audio_ready', (data) => {
+    onAudioReady(data.url);
   });
 }
 
@@ -118,15 +145,27 @@ function setupFileUpload() {
     if (isProcessing) return;
     videoFile = null;
     elements.videoPreview.src = '';
-    elements.videoPreview.classList.add('hidden');
+    elements.videoPreview.pause();
+    elements.dualPreviewContainer.classList.add('hidden');
     elements.uploadPlaceholder.classList.remove('hidden');
     elements.filePreview.classList.add('hidden');
     elements.removeVideoBtn.classList.add('hidden');
+    elements.muteToggleLabel.classList.add('hidden');
+    elements.muteIcon.classList.add('hidden');
     elements.videoInput.value = '';
+
+    // Reset completed side
+    resetCompletedPanel();
 
     // Reset dashed styling
     elements.uploadZone.style.borderStyle = 'dashed';
     elements.uploadZone.style.padding = 'var(--spacing-lg)';
+  });
+
+  // Mute toggle (controls whether raw video audio is stripped before generation)
+  elements.muteToggle.addEventListener('change', () => {
+    const muted = elements.muteToggle.checked;
+    elements.muteIcon.textContent = muted ? '🔇' : '🔊';
   });
 }
 
@@ -140,16 +179,47 @@ function handleFileSelect(file) {
 
   const url = URL.createObjectURL(file);
   elements.videoPreview.src = url;
-  elements.videoPreview.classList.remove('hidden');
+
+  // Show dual preview, hide placeholder
+  elements.dualPreviewContainer.classList.remove('hidden');
   elements.uploadPlaceholder.classList.add('hidden');
   elements.removeVideoBtn.classList.remove('hidden');
+  elements.muteToggleLabel.classList.remove('hidden');
+  elements.muteIcon.classList.remove('hidden');
+
+  // Reset completed panel for new file
+  resetCompletedPanel();
+
+  // Capture first frame onto canvas once video metadata loads
+  elements.videoPreview.addEventListener('loadeddata', captureFirstFrame, { once: true });
 
   elements.filePreview.textContent = `✓ ${file.name} (${formatFileSize(file.size)})`;
   elements.filePreview.classList.remove('hidden');
 
-  // Hide border when video is shown to match screenshot 1 perfectly
+  // Hide border when video is shown
   elements.uploadZone.style.borderStyle = 'none';
   elements.uploadZone.style.padding = '0';
+}
+
+function captureFirstFrame() {
+  const video = elements.videoPreview;
+  const canvas = elements.completedThumbnail;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+}
+
+function resetCompletedPanel() {
+  // Show canvas + overlay, hide completed video
+  elements.completedThumbnail.classList.remove('hidden');
+  elements.completedOverlay.classList.remove('hidden');
+  elements.completedVideoPreview.classList.add('hidden');
+  elements.completedVideoPreview.src = '';
+  elements.completedVideoPreview.pause();
+  // Reset overlay text
+  elements.completedOverlay.querySelector('.overlay-icon').textContent = '⏳';
+  elements.completedOverlay.querySelector('.overlay-text').textContent = 'Waiting for generation...';
 }
 
 function formatFileSize(bytes) {
@@ -201,7 +271,7 @@ async function startProcessing() {
 
     // Reset script editor
     elements.scriptTextarea.value = '';
-    elements.charCounter.textContent = '0 chars';
+    elements.charCounter.value = 0;
     elements.scriptOverlayText.classList.remove('hidden');
     elements.scriptOverlayText.textContent = 'Processing video to generate script...';
     setScriptButtonsDisabled(true);
@@ -211,6 +281,16 @@ async function startProcessing() {
     // Include video topic if provided
     if (elements.videoTopic.value.trim() !== '') {
       formData.append('video_topic', elements.videoTopic.value.trim());
+    }
+
+    // Include target char count if lock toggle is active
+    if (charLockActive && lockedCharCount > 0) {
+      formData.append('target_chars', lockedCharCount.toString());
+    }
+
+    // Include mute raw audio flag
+    if (elements.muteToggle.checked) {
+      formData.append('mute_raw_audio', 'true');
     }
 
     const response = await fetch('/start_processing', {
@@ -270,7 +350,16 @@ function setupClearLogs() {
 // ==========================================
 function showScriptForReview(scriptText) {
   elements.scriptTextarea.value = scriptText;
-  elements.charCounter.textContent = `${scriptText.length} chars`;
+  const len = scriptText.length;
+  elements.charCounter.value = len;
+
+  // Auto-update locked char count when lock is active
+  if (charLockActive) {
+    lockedCharCount = len;
+  }
+
+  // Reset audio state for fresh/modified scripts
+  resetAudioState();
 
   // Hide the center overlay text
   elements.scriptOverlayText.classList.add('hidden');
@@ -280,16 +369,50 @@ function showScriptForReview(scriptText) {
   elements.scriptTextarea.focus();
 }
 
+function resetAudioState() {
+  audioGenerated = false;
+  elements.audioPlayer.classList.add('hidden');
+  elements.apAudio.pause();
+  elements.apAudio.src = '';
+  elements.apPlayBtn.textContent = '▶';
+  elements.apTime.textContent = '0:00 / 0:00';
+  elements.apProgress.value = 0;
+  // Reset approve button to Generate Audio
+  elements.approveIcon.textContent = '🔉';
+  elements.approveLabel.textContent = 'Generate Audio';
+}
+
+function onAudioReady(url) {
+  audioGenerated = true;
+  elements.apAudio.src = url;
+  elements.audioPlayer.classList.remove('hidden');
+  // Hide overlay
+  elements.scriptOverlayText.classList.add('hidden');
+  // Switch approve button to Approve mode
+  elements.approveIcon.textContent = '✅';
+  elements.approveLabel.textContent = 'Approve';
+  setScriptButtonsDisabled(false);
+  addLog('🔊 Audio generated — preview it, then Approve to continue', 'success');
+}
+
+function formatTime(seconds) {
+  if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function setScriptButtonsDisabled(disabled) {
   elements.btnApprove.disabled = disabled;
-  elements.btnSaveEdit.disabled = disabled;
-  elements.btnPolish.disabled = disabled;
+  elements.btnReduce.disabled = disabled;
+  elements.btnExtend.disabled = disabled;
   elements.btnRegenerate.disabled = disabled;
 }
 
 function setupScriptReview() {
   elements.scriptTextarea.addEventListener('input', () => {
-    elements.charCounter.textContent = `${elements.scriptTextarea.value.length} chars`;
+    const len = elements.scriptTextarea.value.length;
+    elements.charCounter.value = len;
     if (elements.scriptTextarea.value.trim() === '') {
       elements.scriptOverlayText.classList.remove('hidden');
       elements.scriptOverlayText.textContent = 'Script is empty. Type or regenerate.';
@@ -300,37 +423,104 @@ function setupScriptReview() {
 
   elements.btnRegenerate.addEventListener('click', () => {
     setScriptButtonsDisabled(true);
-    socket.emit('script_review_response', { action: 'regenerate', text: '' });
+    resetAudioState();
+    const payload = { action: 'regenerate', text: '' };
+    if (charLockActive && lockedCharCount > 0) payload.target_chars = lockedCharCount;
+    socket.emit('script_review_response', payload);
     elements.scriptOverlayText.classList.remove('hidden');
     elements.scriptOverlayText.textContent = '🔄 Regenerating script...';
     elements.scriptTextarea.value = '';
     addLog('🔄 Regenerating script...', 'warning');
   });
 
-  elements.btnPolish.addEventListener('click', () => {
+  elements.btnExtend.addEventListener('click', () => {
     setScriptButtonsDisabled(true);
+    resetAudioState();
 
-    // We send 'polish' back. We will need to update app.py to handle "polish" if we want to do something with it. 
-    // Right now, we can treat it like generate but maybe a different prompt in backend? 
-    // For now, emit it so UI functions correctly.
-    socket.emit('script_review_response', { action: 'polish', text: elements.scriptTextarea.value });
+    // Send 'extend' with the current script text so the backend can extend it by ~50%
+    const payload = { action: 'extend', text: elements.scriptTextarea.value };
+    if (charLockActive && lockedCharCount > 0) payload.target_chars = lockedCharCount;
+    socket.emit('script_review_response', payload);
 
     elements.scriptOverlayText.classList.remove('hidden');
-    elements.scriptOverlayText.textContent = '✨ Polishing script...';
+    elements.scriptOverlayText.textContent = '➕ Extending script...';
     elements.scriptTextarea.value = '';
-    addLog('✨ Polishing script...', 'warning');
+    addLog('➕ Extending script by ~50%...', 'warning');
   });
 
-  elements.btnSaveEdit.addEventListener('click', () => {
+  elements.btnReduce.addEventListener('click', () => {
     setScriptButtonsDisabled(true);
-    socket.emit('script_review_response', { action: 'edit', text: elements.scriptTextarea.value });
-    addLog('💾 Script edits saved', 'success');
+    resetAudioState();
+
+    // Send 'reduce' with the current script text so the backend can halve it
+    const payload = { action: 'reduce', text: elements.scriptTextarea.value };
+    if (charLockActive && lockedCharCount > 0) payload.target_chars = lockedCharCount;
+    socket.emit('script_review_response', payload);
+
+    elements.scriptOverlayText.classList.remove('hidden');
+    elements.scriptOverlayText.textContent = '➖ Reducing script...';
+    elements.scriptTextarea.value = '';
+    addLog('➖ Reducing script by ~50%...', 'warning');
   });
 
+  // Approve button: dual-purpose (Generate Audio / Approve)
   elements.btnApprove.addEventListener('click', () => {
     setScriptButtonsDisabled(true);
-    socket.emit('script_review_response', { action: 'approve', text: '' });
-    addLog('✅ Script approved', 'success');
+    if (!audioGenerated) {
+      // First click: generate audio
+      // Save the script text first
+      socket.emit('script_review_response', { action: 'generate_audio', text: elements.scriptTextarea.value });
+      elements.scriptOverlayText.classList.remove('hidden');
+      elements.scriptOverlayText.textContent = '';
+      addLog('🔉 Generating TTS audio...', 'warning');
+    } else {
+      // Second click: approve and continue pipeline
+      socket.emit('script_review_response', { action: 'approve', text: elements.scriptTextarea.value });
+      addLog('✅ Script approved', 'success');
+    }
+  });
+
+  // --- Audio player controls ---
+  elements.apPlayBtn.addEventListener('click', () => {
+    if (elements.apAudio.paused) {
+      elements.apAudio.play();
+      elements.apPlayBtn.textContent = '⏸';
+    } else {
+      elements.apAudio.pause();
+      elements.apPlayBtn.textContent = '▶';
+    }
+  });
+
+  elements.apAudio.addEventListener('timeupdate', () => {
+    const current = elements.apAudio.currentTime;
+    const duration = elements.apAudio.duration || 0;
+    elements.apTime.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+    if (duration > 0) {
+      elements.apProgress.value = (current / duration) * 100;
+    }
+  });
+
+  elements.apAudio.addEventListener('ended', () => {
+    elements.apPlayBtn.textContent = '▶';
+  });
+
+  elements.apProgress.addEventListener('input', () => {
+    const duration = elements.apAudio.duration || 0;
+    if (duration > 0) {
+      elements.apAudio.currentTime = (elements.apProgress.value / 100) * duration;
+    }
+  });
+
+  // --- Char lock toggle ---
+  elements.charLockToggle.addEventListener('change', () => {
+    charLockActive = elements.charLockToggle.checked;
+    if (charLockActive) {
+      // Lock: save current char count
+      lockedCharCount = parseInt(elements.charCounter.value) || 0;
+      addLog(`🔒 Char count locked at ${lockedCharCount}`, 'success');
+    } else {
+      addLog('🔓 Char count unlocked', 'warning');
+    }
   });
 }
 
@@ -354,6 +544,12 @@ function onProcessingComplete(files) {
     elements.startBtn.querySelector('.btn-icon').textContent = '✅';
     elements.startBtn.querySelector('.btn-text').textContent = 'Download Video';
     elements.startBtn.classList.add('btn-download-ready');
+
+    // Show completed video in the right preview panel
+    elements.completedThumbnail.classList.add('hidden');
+    elements.completedOverlay.classList.add('hidden');
+    elements.completedVideoPreview.src = finalVideoUrl;
+    elements.completedVideoPreview.classList.remove('hidden');
   } else {
     // Fallback if no final video found
     resetProcessingState();

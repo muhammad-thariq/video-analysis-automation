@@ -4,6 +4,7 @@ Sends output.txt to Ollama LLM with system_prompt.txt and writes result to input
 """
 import re
 import sys
+import argparse
 import requests
 import json
 from pathlib import Path
@@ -76,6 +77,17 @@ def call_ollama(system_prompt: str, user_message: str) -> str:
 
 def main():
     """Main execution."""
+    parser = argparse.ArgumentParser(description="Ollama Script Generator")
+    parser.add_argument("--topic", type=str, default=None,
+                        help="Path to a text file containing the video topic/context")
+    parser.add_argument("--extend", action="store_true",
+                        help="Extend the existing script in input.txt by ~50%%")
+    parser.add_argument("--reduce", action="store_true",
+                        help="Reduce the existing script in input.txt by ~50%%")
+    parser.add_argument("--target-chars", type=int, default=0,
+                        help="Target character count for the generated script")
+    args = parser.parse_args()
+
     try:
         print("=" * 60)
         print("[*] Starting Ollama Script Generation")
@@ -91,8 +103,131 @@ def main():
         video_analysis = read_file(INPUT_FILE)
         print(f"[OK] Video analysis loaded ({len(video_analysis)} characters)")
         
+        # Build user message with optional weighted topic context
+        if args.extend:
+            # EXTEND MODE: Read existing script and ask LLM to extend it by ~50%
+            print(f"[*] EXTEND MODE: Reading existing script from {OUTPUT_FILE}...")
+            existing_script = read_file(OUTPUT_FILE)
+            word_count = len(existing_script.split())
+            target_extra = max(int(word_count * 0.5), 20)  # At least 20 extra words
+            print(f"[*] Current script: {word_count} words, targeting ~{target_extra} additional words")
+
+            # Read topic context if provided
+            topic_context = ""
+            if args.topic:
+                topic_path = Path(args.topic)
+                if topic_path.exists():
+                    topic_text = topic_path.read_text(encoding="utf-8").strip()
+                    if topic_text:
+                        topic_context = f'\nVideo topic/context: "{topic_text}"\n'
+
+            user_message = (
+                "=== TASK: EXTEND THIS SCRIPT ===\n"
+                "You must take the following existing script and EXTEND it by adding "
+                f"approximately {target_extra} more words of NEW content.\n\n"
+                "RULES:\n"
+                "1. Keep ALL of the original script EXACTLY as-is (word for word).\n"
+                "2. The script MUST start with \"This cat\" (already in the original).\n"
+                "3. The script MUST end with \"...And did you know that?\"\n"
+                "4. Insert your NEW content BEFORE the ending phrase \"...And did you know that?\"\n"
+                "5. The new content should flow naturally from the existing script.\n"
+                "6. Maintain the same comedic tone, energy, and style.\n"
+                "7. Output ONLY the full extended script (original + new content), nothing else.\n"
+                f"{topic_context}\n"
+                "=== ORIGINAL SCRIPT (extend this) ===\n"
+                f"{existing_script}\n"
+                "=== END ORIGINAL SCRIPT ===\n"
+            )
+
+            # Also load image analysis as secondary context
+            if Path(INPUT_FILE).exists():
+                analysis = read_file(INPUT_FILE)
+                # Only add if it's actual analysis (not the script itself)
+                if not analysis.strip().startswith("This cat"):
+                    user_message += (
+                        "\n=== SUPPORTING VISUAL ANALYSIS (for inspiration) ===\n"
+                        f"{analysis}\n"
+                        "=== END VISUAL ANALYSIS ===\n"
+                    )
+        elif args.reduce:
+            # REDUCE MODE: Read existing script and ask LLM to halve it
+            print(f"[*] REDUCE MODE: Reading existing script from {OUTPUT_FILE}...")
+            existing_script = read_file(OUTPUT_FILE)
+            word_count = len(existing_script.split())
+            char_count = len(existing_script)
+            target_words = max(int(word_count * 0.5), 10)
+            target_char_count = max(int(char_count * 0.5), 50)
+            print(f"[*] Current script: {word_count} words / {char_count} chars, targeting ~{target_words} words / ~{target_char_count} chars")
+
+            # Read topic context if provided
+            topic_context = ""
+            if args.topic:
+                topic_path = Path(args.topic)
+                if topic_path.exists():
+                    topic_text = topic_path.read_text(encoding="utf-8").strip()
+                    if topic_text:
+                        topic_context = f'\nVideo topic/context: "{topic_text}"\n'
+
+            user_message = (
+                "=== TASK: REDUCE THIS SCRIPT ===\n"
+                "You must take the following existing script and REDUCE it to approximately "
+                f"{target_words} words (~{target_char_count} characters). That is roughly HALF the current length.\n\n"
+                "RULES:\n"
+                "1. The script MUST start with \"This cat\" (keep the opening).\n"
+                "2. The script MUST end with \"...And did you know that?\"\n"
+                "3. Keep the BEST and FUNNIEST parts of the original script.\n"
+                "4. Remove filler, repetitive jokes, and weaker lines.\n"
+                "5. Maintain the same comedic tone, energy, and punchiness.\n"
+                "6. The reduced script should feel complete and natural, not abruptly cut.\n"
+                "7. Output ONLY the reduced script, nothing else.\n"
+                f"{topic_context}\n"
+                "=== ORIGINAL SCRIPT (reduce this) ===\n"
+                f"{existing_script}\n"
+                "=== END ORIGINAL SCRIPT ===\n"
+            )
+        elif args.topic:
+            topic_path = Path(args.topic)
+            if topic_path.exists():
+                topic_text = topic_path.read_text(encoding="utf-8").strip()
+                if topic_text:
+                    print(f"[*] Video topic provided: {topic_text}")
+                    # Prepend topic as PRIMARY CONTEXT with higher weight than image analysis
+                    user_message = (
+                        "=== PRIMARY CONTEXT (USE THIS AS THE MAIN THEME) ===\n"
+                        f"The creator has specified the following topic/context for this video:\n"
+                        f"\"{topic_text}\"\n"
+                        "\n"
+                        "IMPORTANT: The above topic is the MAIN DIRECTION for the script. "
+                        "Use the image analysis below as supporting visual details, but the "
+                        "topic above should be the PRIMARY driver of the script's theme, "
+                        "jokes, and narrative direction.\n"
+                        "=== END PRIMARY CONTEXT ===\n\n"
+                        "=== SUPPORTING VISUAL ANALYSIS (secondary reference) ===\n"
+                        f"{video_analysis}\n"
+                        "=== END VISUAL ANALYSIS ===\n"
+                    )
+                else:
+                    user_message = video_analysis
+            else:
+                print(f"[WARN] Topic file not found: {args.topic}")
+                user_message = video_analysis
+        else:
+            user_message = video_analysis
+        
+        # Append target character count instruction if specified
+        if args.target_chars and args.target_chars > 0 and not args.extend and not args.reduce:
+            target_words_approx = max(int(args.target_chars / 5), 10)  # Rough chars-to-words
+            print(f"[*] Target char count: {args.target_chars} (~{target_words_approx} words)")
+            user_message += (
+                f"\n\n=== LENGTH CONSTRAINT ===\n"
+                f"IMPORTANT: The output script MUST be approximately {args.target_chars} characters long "
+                f"(roughly {target_words_approx} words). This is a hard constraint — "
+                f"aim to be within 10%% of this target length.\n"
+                f"=== END LENGTH CONSTRAINT ===\n"
+            )
+        
         # Call Ollama
-        raw_response = call_ollama(system_prompt, video_analysis)
+        raw_response = call_ollama(system_prompt, user_message)
         
         # Remove <think> tags
         print("[*] Cleaning response (removing <think> tags)...")

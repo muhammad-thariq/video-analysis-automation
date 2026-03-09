@@ -250,8 +250,17 @@ def process_pipeline():
 
         # Step 2: ollama_generate_script.py
         step = PIPELINE_STEPS[1]
+        ollama_cmd = [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_script.py")]
+        topic_file = PCC_DIR / "video_topic.txt"
+        if topic_file.exists():
+            ollama_cmd += ["--topic", str(topic_file)]
+        target_chars_file = PCC_DIR / "target_chars.txt"
+        if target_chars_file.exists():
+            tc = target_chars_file.read_text(encoding="utf-8").strip()
+            if tc and int(tc) > 0:
+                ollama_cmd += ["--target-chars", tc]
         ok, log = run_cmd(
-            [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_script.py")],
+            ollama_cmd,
             PCC_DIR,
             step,
         )
@@ -261,6 +270,7 @@ def process_pipeline():
             return
 
         # ── HUMAN-IN-THE-LOOP: pause for script review ──
+        audio_generated_during_review = False
         while True:
             input_txt_path = PCC_DIR / UPLOAD_TEXT_NAME
             script_text = input_txt_path.read_text(encoding="utf-8", errors="ignore") if input_txt_path.exists() else ""
@@ -275,11 +285,124 @@ def process_pipeline():
             action = script_review_action["action"]
             new_text = script_review_action["text"]
 
-            if action in ["regenerate", "polish"]:
-                verb = "Polishing" if action == "polish" else "Regenerating"
-                emit_log(f"🔄 {verb} script (re-running Ollama)...")
+            if action == "generate_audio":
+                # Save the current script text
+                if new_text.strip():
+                    input_txt_path.write_text(new_text, encoding="utf-8")
+                emit_log("🔉 Generating TTS audio...")
+
+                # Delete existing audio
+                heart_wav = PCC_DIR / "heart_all.wav"
+                if heart_wav.exists():
+                    heart_wav.unlink()
+
+                # Run kokoro_heart.py for TTS
+                tts_step = PIPELINE_STEPS[2]  # TTS step info for logging
                 ok, log = run_cmd(
-                    [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_script.py")],
+                    [VENV_PYTHON, str(SCRIPTS_DIR / "kokoro_heart.py")],
+                    PCC_DIR,
+                    tts_step,
+                )
+                if not ok:
+                    emit_log("❌ Audio generation failed")
+                    socketio.emit("processing_error", {"message": "Audio generation failed"})
+                    return
+
+                audio_generated_during_review = True
+                # Emit audio ready event with file URL
+                socketio.emit("audio_ready", {"url": "/files/heart_all.wav"})
+                emit_log("🔊 Audio ready for preview")
+
+                # Wait for user's next action (approve or modify script)
+                script_review_gate.clear()
+                script_review_gate.wait()
+
+                # Process the next action from the second wait
+                action = script_review_action["action"]
+                new_text = script_review_action["text"]
+
+                if action == "approve":
+                    if new_text.strip():
+                        input_txt_path.write_text(new_text, encoding="utf-8")
+                    emit_log("✅ Script approved — continuing pipeline")
+                    break
+                # If they chose anything else, fall through to the handlers below
+
+            if action == "extend":
+                # Delete audio if it exists (script changed)
+                heart_wav = PCC_DIR / "heart_all.wav"
+                if heart_wav.exists():
+                    heart_wav.unlink()
+                    emit_log("🗑️ Audio deleted (script changed)")
+                audio_generated_during_review = False
+
+                # Save the current script text so the extend prompt can read it
+                input_txt_path.write_text(new_text, encoding="utf-8")
+                emit_log("➕ Extending script by ~50% (re-running Ollama)...")
+                extend_cmd = [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_script.py"), "--extend"]
+                if topic_file.exists():
+                    extend_cmd += ["--topic", str(topic_file)]
+                target_chars = script_review_action.get("target_chars", 0)
+                if target_chars and int(target_chars) > 0:
+                    extend_cmd += ["--target-chars", str(target_chars)]
+                ok, log = run_cmd(
+                    extend_cmd,
+                    PCC_DIR,
+                    step,
+                )
+                if not ok:
+                    emit_log("❌ Script extension failed")
+                    socketio.emit("processing_error", {"message": "Script extension failed"})
+                    return
+                # Loop back to show the extended script for review
+                continue
+
+            if action == "reduce":
+                # Delete audio if it exists (script changed)
+                heart_wav = PCC_DIR / "heart_all.wav"
+                if heart_wav.exists():
+                    heart_wav.unlink()
+                    emit_log("🗑️ Audio deleted (script changed)")
+                audio_generated_during_review = False
+
+                # Save the current script text so the reduce prompt can read it
+                input_txt_path.write_text(new_text, encoding="utf-8")
+                emit_log("➖ Reducing script by ~50% (re-running Ollama)...")
+                reduce_cmd = [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_script.py"), "--reduce"]
+                if topic_file.exists():
+                    reduce_cmd += ["--topic", str(topic_file)]
+                target_chars = script_review_action.get("target_chars", 0)
+                if target_chars and int(target_chars) > 0:
+                    reduce_cmd += ["--target-chars", str(target_chars)]
+                ok, log = run_cmd(
+                    reduce_cmd,
+                    PCC_DIR,
+                    step,
+                )
+                if not ok:
+                    emit_log("❌ Script reduction failed")
+                    socketio.emit("processing_error", {"message": "Script reduction failed"})
+                    return
+                # Loop back to show the reduced script for review
+                continue
+
+            if action == "regenerate":
+                # Delete audio if it exists (script changed)
+                heart_wav = PCC_DIR / "heart_all.wav"
+                if heart_wav.exists():
+                    heart_wav.unlink()
+                    emit_log("🗑️ Audio deleted (script changed)")
+                audio_generated_during_review = False
+
+                emit_log("🔄 Regenerating script (re-running Ollama)...")
+                regen_cmd = [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_script.py")]
+                if topic_file.exists():
+                    regen_cmd += ["--topic", str(topic_file)]
+                target_chars = script_review_action.get("target_chars", 0)
+                if target_chars and int(target_chars) > 0:
+                    regen_cmd += ["--target-chars", str(target_chars)]
+                ok, log = run_cmd(
+                    regen_cmd,
                     PCC_DIR,
                     step,
                 )
@@ -295,26 +418,34 @@ def process_pipeline():
                 emit_log("✅ Script updated with your edits")
 
             # action == "approve" or "edit" -> continue pipeline
+            # Save any edits from approve (since Save button was removed)
+            if action == "approve" and new_text.strip():
+                input_txt_path.write_text(new_text, encoding="utf-8")
             emit_log("✅ Script approved — continuing pipeline")
             break
 
-        # Step 3: kokoro_heart.py
+        # Step 3: kokoro_heart.py (skip if audio was already generated during review)
         step = PIPELINE_STEPS[2]
-        # Delete existing heart_all.wav to avoid any prompts
-        heart_wav = PCC_DIR / "heart_all.wav"
-        if heart_wav.exists():
-            heart_wav.unlink()
-            emit_log("🗑️ Removed existing heart_all.wav")
-        
-        ok, log = run_cmd(
-            [VENV_PYTHON, str(SCRIPTS_DIR / "kokoro_heart.py")],  # Absolute path
-            PCC_DIR,
-            step,
-        )
-        if not ok:
-            emit_log("❌ Pipeline failed at step 3")
-            socketio.emit("processing_error", {"message": "TTS generation failed"})
-            return
+        if audio_generated_during_review:
+            emit_log("⏭️ Skipping TTS — audio was already generated during review")
+            emit_step_status(step["id"], "completed", f"{step['name']} completed ✓ (pre-generated)")
+            emit_progress(step["progress_end"])
+        else:
+            # Delete existing heart_all.wav to avoid any prompts
+            heart_wav = PCC_DIR / "heart_all.wav"
+            if heart_wav.exists():
+                heart_wav.unlink()
+                emit_log("🗑️ Removed existing heart_all.wav")
+            
+            ok, log = run_cmd(
+                [VENV_PYTHON, str(SCRIPTS_DIR / "kokoro_heart.py")],
+                PCC_DIR,
+                step,
+            )
+            if not ok:
+                emit_log("❌ Pipeline failed at step 3")
+                socketio.emit("processing_error", {"message": "TTS generation failed"})
+                return
 
         # Step 4: stable-ts
         step = PIPELINE_STEPS[3]
@@ -342,7 +473,7 @@ def process_pipeline():
                 "--max_chars",
                 "42",
                 "--max_words",
-                "4",
+                "3",
             ],
             PCC_DIR,
             step,
@@ -473,8 +604,42 @@ def start_processing():
         else:
             emit_log("⚠ No video file in request")
 
+        # Handle video topic (optional weighted context)
+        video_topic = request.form.get("video_topic", "").strip()
+        topic_path = PCC_DIR / "video_topic.txt"
+        if video_topic:
+            topic_path.write_text(video_topic, encoding="utf-8")
+            emit_log(f"📝 Video topic set: {video_topic}")
+        elif topic_path.exists():
+            topic_path.unlink()  # Remove stale topic file
+
+        # Handle target char count (optional)
+        target_chars = request.form.get("target_chars", "").strip()
+        tc_path = PCC_DIR / "target_chars.txt"
+        if target_chars and int(target_chars) > 0:
+            tc_path.write_text(target_chars, encoding="utf-8")
+            emit_log(f"🔒 Target char count: {target_chars}")
+        elif tc_path.exists():
+            tc_path.unlink()
+
         # Script will be automatically generated by Ollama after video analysis
         emit_log("🤖 Script will be auto-generated by AI from video analysis")
+
+        # Handle mute raw audio option
+        mute_raw = request.form.get("mute_raw_audio", "").strip()
+        if mute_raw == "true":
+            video_path = PCC_DIR / UPLOAD_VIDEO_NAME
+            if video_path.exists():
+                muted_path = PCC_DIR / "_video1_muted.mp4"
+                try:
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-i", str(video_path), "-an", "-c:v", "copy", str(muted_path)],
+                        check=True, capture_output=True, text=True,
+                    )
+                    muted_path.replace(video_path)
+                    emit_log("🔇 Raw video audio stripped")
+                except Exception as e:
+                    emit_log(f"⚠ Failed to mute raw audio: {e}")
 
 
         # Start processing in background thread
@@ -531,11 +696,12 @@ def handle_disconnect():
 
 @socketio.on("script_review_response")
 def handle_script_review(data):
-    """Handle user's script review decision: approve, edit, or regenerate."""
+    """Handle user's script review decision: approve, extend, reduce, or regenerate."""
     global script_review_action
     script_review_action = {
         "action": data.get("action", "approve"),
         "text": data.get("text", ""),
+        "target_chars": data.get("target_chars", 0),
     }
     script_review_gate.set()
 

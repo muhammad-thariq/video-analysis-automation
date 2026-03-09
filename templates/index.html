@@ -31,7 +31,14 @@
             <section class="card media-card">
                 <div class="card-header">
                     <h2 class="section-title">📼 Media Input</h2>
-                    <button class="btn-link hidden" id="removeVideoBtn">Remove Video</button>
+                    <div class="media-header-actions">
+                        <span class="char-label" id="" title="">🔇Mute Audio</span>
+                        <label class="toggle-switch hidden" id="muteToggleLabel" title="Strip audio before processing">
+                            <input type="checkbox" id="muteToggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <button class="btn-danger-outline hidden" id="removeVideoBtn">Remove Video</button>
+                    </div>
                 </div>
 
                 <div class="upload-zone" id="uploadZone">
@@ -41,7 +48,26 @@
                         <p class="upload-text">Drag & drop your video here</p>
                         <p class="upload-subtext">or click to browse (MP4, MOV)</p>
                     </div>
-                    <video id="videoPreview" class="video-preview hidden" controls muted></video>
+                    <!-- Dual Preview: shown after file drop -->
+                    <div id="dualPreviewContainer" class="dual-preview-container hidden">
+                        <!-- Left: Original / Raw -->
+                        <div class="preview-panel preview-left">
+                            <div class="preview-label">📹 Original</div>
+                            <video id="videoPreview" class="preview-video" controls muted></video>
+                        </div>
+                        <!-- Right: Completed -->
+                        <div class="preview-panel preview-right">
+                            <div class="preview-label">✨ Completed</div>
+                            <div class="preview-completed-wrapper" id="completedWrapper">
+                                <canvas id="completedThumbnail" class="preview-video completed-thumbnail"></canvas>
+                                <div class="completed-overlay" id="completedOverlay">
+                                    <div class="overlay-icon">⏳</div>
+                                    <div class="overlay-text">Waiting for generation...</div>
+                                </div>
+                                <video id="completedVideoPreview" class="preview-video hidden" controls muted></video>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div id="filePreview" class="file-preview hidden"></div>
@@ -62,7 +88,15 @@
             <section class="card script-card">
                 <div class="card-header">
                     <h2 class="section-title">✏️ Script Generator</h2>
-                    <span class="char-badge" id="charCounter">0 chars</span>
+                    <div class="char-controls">
+                        <input type="number" class="char-input" id="charCounter" value="0" min="0"
+                            title="Target character count">
+                        <span class="char-label">chars</span>
+                        <label class="toggle-switch" title="Lock character count for AI generation">
+                            <input type="checkbox" id="charLockToggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
                 </div>
 
                 <div class="script-textarea-container">
@@ -73,22 +107,30 @@
                     </div>
                 </div>
 
+                <div class="audio-player hidden" id="audioPlayer">
+                    <button class="ap-play-btn" id="apPlayBtn">▶</button>
+                    <span class="ap-time" id="apTime">0:00 / 0:00</span>
+                    <input type="range" class="ap-progress" id="apProgress" value="0" min="0" max="100" step="0.1">
+                    <span class="ap-volume">🔊</span>
+                    <audio id="apAudio" preload="auto"></audio>
+                </div>
+
                 <div class="script-btn-row" id="scriptActions">
                     <button class="script-action-btn btn-enabled-regenerate" id="btnRegenerate" disabled>
                         <span class="sa-icon">🔄</span>
                         <span class="sa-label">Regenerate</span>
                     </button>
-                    <button class="script-action-btn btn-enabled-polish" id="btnPolish" disabled>
-                        <span class="sa-icon">✨</span>
-                        <span class="sa-label">Polish</span>
+                    <button class="script-action-btn btn-enabled-extend" id="btnExtend" disabled>
+                        <span class="sa-icon">➕</span>
+                        <span class="sa-label">Extend</span>
                     </button>
-                    <button class="script-action-btn btn-enabled-save" id="btnSaveEdit" disabled>
-                        <span class="sa-icon">💾</span>
-                        <span class="sa-label">Save</span>
+                    <button class="script-action-btn btn-enabled-reduce" id="btnReduce" disabled>
+                        <span class="sa-icon">➖</span>
+                        <span class="sa-label">Reduce</span>
                     </button>
                     <button class="script-action-btn btn-enabled-approve" id="btnApprove" disabled>
-                        <span class="sa-icon">✅</span>
-                        <span class="sa-label">Approve</span>
+                        <span class="sa-icon" id="approveIcon">🔉</span>
+                        <span class="sa-label" id="approveLabel">Generate Audio</span>
                     </button>
                 </div>
             </section>
