@@ -174,7 +174,7 @@ body {
     text-align: center;
     cursor: pointer;
     background-color: transparent;
-    min-height: 240px;
+    min-height: 410px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -195,6 +195,62 @@ body {
 
 #uploadPlaceholder {
     padding: var(--spacing-lg);
+}
+
+/* --- Upload Split Layout --- */
+.upload-split {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+}
+
+.upload-split-left,
+.upload-split-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-md);
+    gap: 0.25rem;
+}
+
+.upload-split-divider {
+    width: 1px;
+    height: 60%;
+    background: var(--border);
+    flex-shrink: 0;
+}
+
+.btn-autoselect {
+    margin-top: 0.75rem;
+    padding: 0.5rem 1.25rem;
+    background: linear-gradient(to right, #6366f1, #a855f7);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+}
+
+.btn-autoselect:hover {
+    opacity: 0.85;
+}
+
+.autoselect-info {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--success);
+    text-align: center;
+    word-break: break-all;
+    max-width: 200px;
+}
+
+.autoselect-info.hidden {
+    display: none;
 }
 
 .upload-icon {
@@ -223,7 +279,7 @@ body {
     inset: 0;
     z-index: 10;
     padding: 0.5rem;
-    background: #000;
+    background: #222634;
 }
 
 .dual-preview-container.hidden {
@@ -237,26 +293,33 @@ body {
     min-width: 0;
     border-radius: var(--radius-sm);
     overflow: hidden;
-    background: #111318;
+    background: #222634;
+    position: relative;
 }
 
 .preview-label {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 20;
     font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    padding: 0.4rem 0.6rem;
-    color: var(--text-secondary);
-    background: rgba(255, 255, 255, 0.05);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.5rem 0.6rem 1.75rem 0.6rem;
+    color: #fff;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7) 15%, rgba(0, 0, 0, 0) 100%);
+    /* border-bottom: 1px solid rgba(255, 255, 255, 0.08); */
     flex-shrink: 0;
+    pointer-events: none;
 }
 
 .preview-video {
     width: 100%;
     flex: 1;
     object-fit: contain;
-    background: #000;
+    background: rgba(255, 255, 255, 0.05);
     display: block;
     min-height: 0;
 }

@@ -11,7 +11,13 @@ import subprocess
 import tempfile
 import re
 import html
+import sys
 from pathlib import Path
+
+# Fix Windows console encoding for emoji support
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
 
 # ---------- ffprobe ----------
 
@@ -179,39 +185,40 @@ def main():
 
     args = ap.parse_args()
     
-    # --- Set video_out from first line of input.txt (if present) ---
-    input_title_file = Path("input.txt")
-    if input_title_file.exists():
+    # --- Set video_out from generated_title.txt or input.txt ---
+    generated_title_file = Path("generated_title.txt")
+    if generated_title_file.exists():
         try:
-            first_line = input_title_file.read_text(encoding="utf-8", errors="ignore").splitlines()[0].strip()
-        except Exception:
-            first_line = ""
-            
-        if first_line:
-            # 1. Split the text into words
-            words = first_line.split()
-            selected_words = []
-            
-            # 2. Loop through and apply our rules (min 5, max 15, or period)
-            for i, word in enumerate(words):
-                if i >= 15: # Stop strictly at 15 words
-                    break
-                
-                selected_words.append(word)
-                
-                # Stop if we see a period AND we already have at least 5 words (index 4)
-                if '.' in word and i >= 4:
-                    break
-            
-            raw_title = " ".join(selected_words)
-            
-            # 3. Remove characters illegal in Windows/macOS filenames and control chars
+            raw_title = generated_title_file.read_text(encoding="utf-8", errors="ignore").strip()
+            raw_title = " ".join(raw_title.split())
             safe_title = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "", raw_title).strip().rstrip(".")
-            
             if safe_title:
-                # Keep the same directory as the original --video_out argument, only change the filename
                 _out_dir = Path(args.video_out).resolve().parent
                 args.video_out = str((_out_dir / f"{safe_title}.mp4").resolve())
+        except Exception:
+            pass
+    else:
+        input_title_file = Path("input.txt")
+        if input_title_file.exists():
+            try:
+                first_line = input_title_file.read_text(encoding="utf-8", errors="ignore").splitlines()[0].strip()
+            except Exception:
+                first_line = ""
+                
+            if first_line:
+                words = first_line.split()
+                selected_words = []
+                for i, word in enumerate(words):
+                    if i >= 15: break
+                    selected_words.append(word)
+                    if '.' in word and i >= 4: break
+                
+                raw_title = " ".join(selected_words)
+                safe_title = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "", raw_title).strip().rstrip(".")
+                
+                if safe_title:
+                    _out_dir = Path(args.video_out).resolve().parent
+                    args.video_out = str((_out_dir / f"{safe_title}.mp4").resolve())
 
     video_in = Path(args.video_in).resolve()
     srt_in   = Path(args.srt_in).resolve()

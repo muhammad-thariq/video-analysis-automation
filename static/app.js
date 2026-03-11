@@ -3,6 +3,7 @@
 // ==========================================
 let socket = null;
 let videoFile = null;
+let autoSelectFile = null;  // filename from v_raw when auto-select is used
 let isProcessing = false;
 let charLockActive = true;  // Toggle default ON
 let lockedCharCount = 0;    // The saved target char count
@@ -102,6 +103,13 @@ function initializeSocket() {
   socket.on('audio_ready', (data) => {
     onAudioReady(data.url);
   });
+
+  socket.on('title_generated', (data) => {
+    const titleInput = document.getElementById('scriptTitle');
+    if (titleInput) {
+      titleInput.value = data.title;
+    }
+  });
 }
 
 // ==========================================
@@ -110,6 +118,8 @@ function initializeSocket() {
 function setupFileUpload() {
   elements.uploadZone.addEventListener('click', (e) => {
     if (e.target.closest('video')) return;
+    // Don't open file picker if clicking the auto-select side
+    if (e.target.closest('#uploadSplitRight') || e.target.closest('.btn-autoselect')) return;
     if (!isProcessing) elements.videoInput.click();
   });
 
@@ -144,6 +154,7 @@ function setupFileUpload() {
   elements.removeVideoBtn.addEventListener('click', () => {
     if (isProcessing) return;
     videoFile = null;
+    autoSelectFile = null;
     elements.videoPreview.src = '';
     elements.videoPreview.pause();
     elements.dualPreviewContainer.classList.add('hidden');
@@ -153,6 +164,10 @@ function setupFileUpload() {
     elements.muteToggleLabel.classList.add('hidden');
     elements.muteIcon.classList.add('hidden');
     elements.videoInput.value = '';
+
+    // Reset auto-select info
+    const autoInfo = document.getElementById('autoSelectInfo');
+    if (autoInfo) autoInfo.classList.add('hidden');
 
     // Reset completed side
     resetCompletedPanel();
@@ -167,6 +182,51 @@ function setupFileUpload() {
     const muted = elements.muteToggle.checked;
     elements.muteIcon.textContent = muted ? '🔇' : '🔊';
   });
+
+  // Auto-Select button
+  const autoSelectBtn = document.getElementById('autoSelectBtn');
+  if (autoSelectBtn) {
+    autoSelectBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (isProcessing) return;
+      try {
+        const res = await fetch('/api/v_raw_oldest');
+        const data = await res.json();
+        if (!data.found) {
+          alert('No video files found in v_raw folder');
+          return;
+        }
+        autoSelectFile = data.filename;
+        videoFile = { name: data.filename, size: data.size, type: 'video/mp4', _autoSelect: true };
+
+        // Show the filename in the auto-select info area
+        const autoInfo = document.getElementById('autoSelectInfo');
+        const autoName = document.getElementById('autoSelectFilename');
+        if (autoInfo && autoName) {
+          autoName.textContent = `✓ ${data.filename} (${formatFileSize(data.size)})`;
+          autoInfo.classList.remove('hidden');
+        }
+
+        // Load preview from server
+        elements.videoPreview.src = `/files/v_raw/${encodeURIComponent(data.filename)}`;
+        elements.dualPreviewContainer.classList.remove('hidden');
+        elements.uploadPlaceholder.classList.add('hidden');
+        elements.removeVideoBtn.classList.remove('hidden');
+        elements.muteToggleLabel.classList.remove('hidden');
+        elements.muteIcon.classList.remove('hidden');
+        resetCompletedPanel();
+        elements.videoPreview.addEventListener('loadeddata', captureFirstFrame, { once: true });
+
+        elements.filePreview.textContent = `✓ [Auto] ${data.filename} (${formatFileSize(data.size)})`;
+        elements.filePreview.classList.remove('hidden');
+
+        elements.uploadZone.style.borderStyle = 'none';
+        elements.uploadZone.style.padding = '0';
+      } catch (err) {
+        alert('Failed to fetch from v_raw: ' + err.message);
+      }
+    });
+  }
 }
 
 function handleFileSelect(file) {
@@ -176,6 +236,7 @@ function handleFileSelect(file) {
   }
 
   videoFile = file;
+  autoSelectFile = null;  // Clear auto-select when user manually picks a file
 
   const url = URL.createObjectURL(file);
   elements.videoPreview.src = url;
@@ -238,6 +299,26 @@ function setupStartButton() {
     // If button is in download mode, trigger the download
     if (finalVideoUrl) {
       window.open(finalVideoUrl, '_blank');
+
+      // If auto-select was used, save the final video to v_fin and clean up v_raw
+      if (autoSelectFile) {
+        try {
+          const finalFilename = finalVideoUrl.split('/').pop();
+          await fetch('/api/move_to_v_fin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              raw_filename: autoSelectFile,
+              final_filename: decodeURIComponent(finalFilename)
+            })
+          });
+          addLog(`📦 Saved final video to v_fin and removed raw file`, 'success');
+        } catch (err) {
+          addLog(`⚠ Failed to move to v_fin: ${err.message}`, 'error');
+        }
+        autoSelectFile = null;
+      }
+
       // Reset button back to Start Processing after download
       finalVideoUrl = null;
       elements.startBtn.querySelector('.btn-icon').textContent = '🚀';
@@ -271,13 +352,20 @@ async function startProcessing() {
 
     // Reset script editor
     elements.scriptTextarea.value = '';
+    const titleInput = document.getElementById('scriptTitle');
+    if (titleInput) titleInput.value = '';
     elements.charCounter.value = 0;
     elements.scriptOverlayText.classList.remove('hidden');
     elements.scriptOverlayText.textContent = 'Processing video to generate script...';
     setScriptButtonsDisabled(true);
 
     const formData = new FormData();
-    formData.append('video_file', videoFile);
+    // If auto-select was used, send filename instead of blob
+    if (autoSelectFile) {
+      formData.append('auto_select_file', autoSelectFile);
+    } else {
+      formData.append('video_file', videoFile);
+    }
     // Include video topic if provided
     if (elements.videoTopic.value.trim() !== '') {
       formData.append('video_topic', elements.videoTopic.value.trim());
@@ -371,7 +459,6 @@ function showScriptForReview(scriptText) {
 
 function resetAudioState() {
   audioGenerated = false;
-  elements.audioPlayer.classList.add('hidden');
   elements.apAudio.pause();
   elements.apAudio.src = '';
   elements.apPlayBtn.textContent = '▶';
@@ -504,6 +591,11 @@ function setupScriptReview() {
     elements.apPlayBtn.textContent = '▶';
   });
 
+  elements.apAudio.addEventListener('loadedmetadata', () => {
+    const duration = elements.apAudio.duration || 0;
+    elements.apTime.textContent = `0:00 / ${formatTime(duration)}`;
+  });
+
   elements.apProgress.addEventListener('input', () => {
     const duration = elements.apAudio.duration || 0;
     if (duration > 0) {
@@ -581,4 +673,13 @@ document.addEventListener('DOMContentLoaded', () => {
   setupStartButton();
   setupClearLogs();
   setupScriptReview();
+
+  const titleInput = document.getElementById('scriptTitle');
+  if (titleInput) {
+    titleInput.addEventListener('change', (e) => {
+      if (socket && e.target.value.trim() !== '') {
+        socket.emit('update_title', { title: e.target.value.trim() });
+      }
+    });
+  }
 });

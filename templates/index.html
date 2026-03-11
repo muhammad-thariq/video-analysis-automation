@@ -16,13 +16,14 @@
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1 class="title">
-                    <span class="gradient-text">AI Shorts Generator</span>
-                </h1>
-                <p class="subtitle">Transform your videos into engaging 9:16 shorts with AI-powered automated scripting.
+                <!-- <h1 class="title">
+                    <span class="gradient-text">AI Script Generator</span>
+                </h1> -->
+                <!-- <p class="subtitle">Transform your videos into engaging 9:16 shorts with AI-powered automated scripting.
                 </p>
-                <br>
+                <br> -->
             </div>
+            <br>
         </header>
 
         <!-- ===== TOP ROW: Media Input + Script Generator ===== -->
@@ -44,9 +45,24 @@
                 <div class="upload-zone" id="uploadZone">
                     <input type="file" id="videoInput" accept="video/*" hidden>
                     <div id="uploadPlaceholder">
-                        <div class="upload-icon">🎬</div>
-                        <p class="upload-text">Drag & drop your video here</p>
-                        <p class="upload-subtext">or click to browse (MP4, MOV)</p>
+                        <div class="upload-split">
+                            <div class="upload-split-left" id="uploadSplitLeft">
+                                <div class="upload-icon">🎬</div>
+                                <p class="upload-text">Drag & drop your video here</p>
+                                <p class="upload-subtext">or click to browse (MP4, MOV)</p>
+                            </div>
+                            <div class="upload-split-divider"></div>
+                            <div class="upload-split-right" id="uploadSplitRight">
+                                <div class="upload-icon">📂</div>
+                                <p class="upload-text">Auto-Select</p>
+                                <p class="upload-subtext">Pick the oldest video from v_raw</p>
+                                <button type="button" class="btn-autoselect" id="autoSelectBtn">Select from
+                                    v_raw</button>
+                                <div class="autoselect-info hidden" id="autoSelectInfo">
+                                    <span class="autoselect-filename" id="autoSelectFilename"></span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <!-- Dual Preview: shown after file drop -->
                     <div id="dualPreviewContainer" class="dual-preview-container hidden">
@@ -70,13 +86,13 @@
                     </div>
                 </div>
 
-                <div id="filePreview" class="file-preview hidden"></div>
-
                 <div class="video-topic-container">
                     <label class="topic-label" for="videoTopic">Video Topic / Context (Optional)</label>
                     <input type="text" id="videoTopic" class="topic-input"
                         placeholder="e.g., A fascinating space fact...">
                 </div>
+
+                <div id="filePreview" class="file-preview hidden"></div>
 
                 <button id="startBtn" class="btn-primary">
                     <span class="btn-icon">🚀</span>
@@ -99,6 +115,11 @@
                     </div>
                 </div>
 
+                <div class="video-topic-container" style="margin-bottom: var(--spacing-sm);">
+                    <input type="text" id="scriptTitle" class="topic-input"
+                        placeholder="Your generated title will appear here...">
+                </div>
+
                 <div class="script-textarea-container">
                     <textarea class="script-textarea" id="scriptTextarea" autocomplete="off" spellcheck="false"
                         placeholder="Your generated script will appear here..."></textarea>
@@ -107,7 +128,7 @@
                     </div>
                 </div>
 
-                <div class="audio-player hidden" id="audioPlayer">
+                <div class="audio-player" id="audioPlayer">
                     <button class="ap-play-btn" id="apPlayBtn">▶</button>
                     <span class="ap-time" id="apTime">0:00 / 0:00</span>
                     <input type="range" class="ap-progress" id="apProgress" value="0" min="0" max="100" step="0.1">

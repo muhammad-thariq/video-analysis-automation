@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import shutil
 import subprocess
 import threading
 from pathlib import Path
@@ -131,6 +132,8 @@ def run_cmd(cmd, cwd: Path, step_info):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # Merge stderr into stdout
             text=True,
+            encoding='utf-8',  # Explicit UTF-8 to avoid cp1252 errors on Windows
+            errors='replace',  # Replace undecodable bytes instead of crashing
             shell=True,  # Use shell for better Windows compatibility
             env=env,
         )
@@ -169,37 +172,37 @@ def run_cmd(cmd, cwd: Path, step_info):
 
 
 def final_video_name_from_input_txt() -> str | None:
-    """Get the final video filename based on input.txt first line.
-    
-    Must match the truncation logic in burn_hardsub_fit_ass.py:
-    min 5, max 15 words, stop at period after 5 words.
-    """
+    """Get the final video filename based on generated_title.txt or input.txt first line."""
+    import re
+    generated_path = PCC_DIR / "generated_title.txt"
+    if generated_path.exists():
+        try:
+            raw_title = generated_path.read_text(encoding="utf-8", errors="ignore").strip()
+            raw_title = " ".join(raw_title.split())
+            safe = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "", raw_title).strip().rstrip(".")
+            if safe:
+                return f"{safe}.mp4"
+        except Exception:
+            pass
+
     input_path = PCC_DIR / UPLOAD_TEXT_NAME
     if not input_path.exists():
         return None
     try:
-        first_line = (
-            input_path.read_text(encoding="utf-8", errors="ignore")
-            .splitlines()[0]
-            .strip()
-        )
+        first_line = input_path.read_text(encoding="utf-8", errors="ignore").splitlines()[0].strip()
     except Exception:
         return None
     if not first_line:
         return None
 
-    # Replicate burn_hardsub_fit_ass.py word-truncation logic
     words = first_line.split()
     selected_words = []
     for i, word in enumerate(words):
-        if i >= 15:
-            break
+        if i >= 15: break
         selected_words.append(word)
-        if '.' in word and i >= 4:
-            break
+        if '.' in word and i >= 4: break
     raw_title = " ".join(selected_words)
 
-    import re
     safe = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "", raw_title).strip().rstrip(".")
     if not safe:
         return None
@@ -424,6 +427,23 @@ def process_pipeline():
             emit_log("✅ Script approved — continuing pipeline")
             break
 
+        # ── TITLE GENERATION (runs after any approve path exits the loop) ──
+        title_txt_path = PCC_DIR / "generated_title.txt"
+        if title_txt_path.exists():
+            title_txt_path.unlink()
+        emit_log("🧠 Generating title with AI...")
+        try:
+            subprocess.run(
+                [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_title.py")],
+                cwd=str(PCC_DIR), check=True, capture_output=True, text=True
+            )
+            if title_txt_path.exists():
+                generated_title = title_txt_path.read_text(encoding="utf-8").strip()
+                socketio.emit("title_generated", {"title": generated_title})
+                emit_log(f"🏷️ Generated Title: {generated_title}")
+        except Exception as e:
+            emit_log(f"⚠ Title generation failed: {e}")
+
         # Step 3: kokoro_heart.py (skip if audio was already generated during review)
         step = PIPELINE_STEPS[2]
         if audio_generated_during_review:
@@ -592,8 +612,18 @@ def start_processing():
         # Ensure PCC directory exists
         PCC_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Handle video file upload
-        if "video_file" in request.files:
+        # Handle video file upload (drag-drop OR auto-select from v_raw)
+        auto_select_file = request.form.get("auto_select_file", "").strip()
+        if auto_select_file:
+            # Auto-select mode: copy from v_raw to video1.mp4
+            src = PCC_DIR / "v_raw" / auto_select_file
+            if src.exists():
+                dst = PCC_DIR / UPLOAD_VIDEO_NAME
+                shutil.copy2(str(src), str(dst))
+                emit_log(f"📂 Auto-selected from v_raw: {auto_select_file}")
+            else:
+                return jsonify({"status": "error", "message": f"File not found in v_raw: {auto_select_file}"}), 400
+        elif "video_file" in request.files:
             video_file = request.files["video_file"]
             if video_file and video_file.filename:
                 video_path = PCC_DIR / UPLOAD_VIDEO_NAME
@@ -679,6 +709,56 @@ def existing_files():
     return jsonify({"files": existing})
 
 
+@app.route("/api/v_raw_oldest")
+def v_raw_oldest():
+    """Return the oldest video file in v_raw/ by modification time."""
+    v_raw_dir = PCC_DIR / "v_raw"
+    if not v_raw_dir.exists():
+        return jsonify({"found": False})
+    video_exts = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+    files = [f for f in v_raw_dir.iterdir() if f.is_file() and f.suffix.lower() in video_exts]
+    if not files:
+        return jsonify({"found": False})
+    oldest = min(files, key=lambda f: f.stat().st_mtime)
+    return jsonify({
+        "found": True,
+        "filename": oldest.name,
+        "size": oldest.stat().st_size,
+    })
+
+
+@app.route("/api/move_to_v_fin", methods=["POST"])
+def move_to_v_fin():
+    """Move the final processed video to v_fin/ and delete the original from v_raw/."""
+    data = request.get_json(force=True)
+    raw_filename = data.get("raw_filename", "").strip()
+    final_filename = data.get("final_filename", "").strip()
+    
+    if not raw_filename or not final_filename:
+        return jsonify({"status": "error", "message": "Missing filenames"}), 400
+        
+    src_raw = PCC_DIR / "v_raw" / raw_filename
+    src_final = PCC_DIR / final_filename
+    
+    if not src_raw.exists():
+        return jsonify({"status": "error", "message": "Original file not found in v_raw"}), 404
+    if not src_final.exists():
+        return jsonify({"status": "error", "message": "Final generated video not found"}), 404
+        
+    dst_dir = PCC_DIR / "v_fin"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Store the final video in v_fin, using the generated name (which includes the title)
+    try:
+        shutil.copy2(str(src_final), str(dst_dir / final_filename))
+        # Delete the original from v_raw
+        src_raw.unlink()
+        emit_log(f"📦 Saved {final_filename} to v_fin and removed {raw_filename} from v_raw")
+        return jsonify({"status": "ok", "message": f"Saved to v_fin and cleaned up v_raw"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # -------------------------------------------------------
 # WEBSOCKET EVENTS
 # -------------------------------------------------------
@@ -704,6 +784,14 @@ def handle_script_review(data):
         "target_chars": data.get("target_chars", 0),
     }
     script_review_gate.set()
+
+
+@socketio.on("update_title")
+def handle_update_title(data):
+    """Handle manually edited title from the frontend."""
+    new_title = data.get("title", "").strip()
+    if new_title:
+        (PCC_DIR / "generated_title.txt").write_text(new_title, encoding="utf-8")
 
 
 if __name__ == "__main__":

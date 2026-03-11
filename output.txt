@@ -1,35 +1,41 @@
 # Per-second cat activity summary for video1.mp4
 # Model: Salesforce/blip-image-captioning-large
-# Duration (approx): 31 seconds
+# Duration (approx): 37 seconds
 
-00:00 — there is a black cat sitting on the floor looking at the camera.
-00:01 — there is a black cat sitting on a tile floor looking at the camera.
-00:02 — there is a black cat sitting on a tile floor looking at the camera.
-00:03 — there is a black cat that is laying down on a pillow.
-00:04 — there is a black cat that is sitting on the floor.
-00:05 — there is a black cat sitting on the floor next to a refrigerator.
-00:06 — there is a black cat sitting on the floor looking at the camera.
-00:07 — there is a black cat sitting on the floor looking at the camera.
-00:08 — there is a black cat sitting on the floor next to a door.
-00:09 — there is a black cat sitting on the floor looking at the camera.
-00:10 — there is a black cat sitting on the floor next to a computer mouse.
-00:11 — there is a black cat sitting on the floor next to a refrigerator.
-00:12 — there is a black cat sitting on the floor next to a computer mouse.
-00:13 — there is a black cat sitting on a tiled floor next to a computer.
-00:14 — there is a black cat sitting on a tiled floor next to a computer.
-00:15 — there is a black cat sitting on the floor next to a laptop.
-00:16 — there is a black cat sitting on a tiled floor next to a computer.
-00:17 — there is a black cat sitting on a white tile floor.
-00:18 — there is a black cat sitting on a white tile floor.
-00:19 — there is a black cat sitting on a white tile floor.
-00:20 — there is a black cat sitting on a white tile floor.
-00:21 — there is a black cat sitting on the floor next to a refrigerator.
-00:22 — there is a black cat sitting on the floor next to a remote control.
-00:23 — there is a black cat that is standing on the floor.
-00:24 — there is a black cat sitting on the floor next to a dishwasher.
-00:25 — there is a cat that is sitting on a seat in the plane.
-00:26 — there is a black cat sitting on a table next to a mouse.
-00:27 — there is a black cat that is sitting on the floor.
-00:28 — there is a black cat sitting on the floor next to a refrigerator.
-00:29 — someone is pointing at a black cat with yellow eyes.
-00:30 — someone is pointing at a black cat with yellow eyes.
+00:00 — there is a cat that is looking at a bowl of food.
+00:01 — there is a cat that is eating out of a bowl.
+00:02 — there is a cat that is reaching for a bowl of food.
+00:03 — there is a cat that is eating food out of a bowl.
+00:04 — there is a cat that is eating food out of a bowl.
+00:05 — there is a cat eating food out of a bowl on the floor.
+00:06 — there is a cat that is eating food out of a bowl.
+00:07 — there is a cat eating food out of a bowl on the floor.
+00:08 — there is a cat eating out of a bowl of food.
+00:09 — there is a cat eating out of a bowl of food.
+00:10 — there is a cat eating out of a bowl of food.
+00:11 — there is a cat eating food out of a bowl on the floor.
+00:12 — there is a cat eating out of a bowl of food.
+00:13 — there is a cat eating out of a bowl of food.
+00:14 — there is a cat eating out of a bowl of food.
+00:15 — there is a cat eating from a bowl of food on the table.
+00:16 — there is a cat eating from a bowl of food on the table.
+00:17 — there is a cat eating food out of a bowl on the floor.
+00:18 — there is a cat eating out of a bowl of food.
+00:19 — there is a cat eating out of a bowl of food.
+00:20 — there is a cat that is eating out of a bowl.
+00:21 — there is a cat that is eating out of a bowl.
+00:22 — there is a cat that is eating out of a bowl.
+00:23 — there is a cat that is eating out of a bowl.
+00:24 — there is a cat that is eating out of a bowl.
+00:25 — there is a cat eating from a bowl of food on the table.
+00:26 — there is a cat eating out of a bowl of food.
+00:27 — there is a cat eating out of a bowl of food.
+00:28 — there is a cat that is eating out of a bowl.
+00:29 — there is a cat that is looking at a bowl of food.
+00:30 — there is a cat that is eating out of a bowl.
+00:31 — there is a cat eating food out of a bowl on the floor.
+00:32 — there is a cat eating food out of a bowl on the floor.
+00:33 — there is a cat eating out of a bowl of food.
+00:34 — there is a cat eating out of a bowl of food.
+00:35 — there is a cat eating out of a bowl of food.
+00:36 — there is a cat eating out of a bowl of food.
