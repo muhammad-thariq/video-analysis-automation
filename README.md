@@ -20,11 +20,14 @@ https://github.com/user-attachments/assets/31bfbcb7-30d6-4e1b-a849-686c7b6bef26
 ---
 
 ## 📋 Overview
+<img width="1760" height="1317" alt="Screenshot 2026-03-12 020724" src="https://github.com/user-attachments/assets/e7b4e642-c6a6-45e0-84a5-0a27f935ff0c" />
+
 **Multimodal AI Content Pipeline** is a web-based tool that automates the creation of vertical short-form content from raw video footage. It provides a **Flask-powered web UI** with real-time progress tracking via Socket.IO, and leverages AI models for vision analysis, script generation, speech synthesis, and subtitle styling.
 
 ### Core Features
 *   **🌐 Web Interface**: Real-time dashboard with drag-and-drop upload, live pipeline progress, script editor, and audio preview.
 *   **📂 Auto-Select from `v_raw`**: Automatically pick the oldest unprocessed video from the `v_raw` directory. Processed files are moved to `v_fin` after download.
+*   **👁️ Computer Vision Analysis**: Uses Salesforce/BLIP to convert visual frames into textual descriptions, enabling content-aware script generation.
 *   **🤖 AI Script Generation**: Uses **Ollama (LLaMA 3.1)** to analyze video content and generate engaging narration scripts, with regenerate, extend, and reduce controls.
 *   **🏷️ AI Title Generation**: Automatically generates a video title from the approved script using a second Ollama prompt.
 *   **🔊 TTS Audio Preview**: Generates speech via **Kokoro-82M** TTS with in-browser audio preview before approval.
@@ -62,15 +65,68 @@ The project runs as a **Flask + Socket.IO web application** that orchestrates a 
 7.  **Vertical Reformat** — `rearrange_9x16.py` crops/letterboxes to 9:16 → `output_9x16_letterbox.mp4`
 8.  **Subtitle Burn + Music** — `burn_hardsub_fit_ass.py` burns ASS subtitles and optionally mixes background music → final titled `.mp4`
 
-### Directory Structure
 
-| Directory | Purpose |
+### API Endpoints
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/` | Serve the web dashboard |
+| `POST` | `/start_processing` | Upload video & start the full pipeline |
+| `POST` | `/script_review_response` | Submit script review action (approve / regenerate / extend / reduce / edit) |
+| `GET` | `/api/v_raw_oldest` | Get the oldest unprocessed video from `v_raw/` |
+| `POST` | `/api/move_to_v_fin` | Save final video to `v_fin/` and clean up `v_raw/` |
+| `GET` | `/files/<path>` | Serve generated files (videos, audio, etc.) |
+
+### Socket.IO Events
+
+| Event | Direction | Description |
+| :--- | :--- | :--- |
+| `log` | Server → Client | Real-time pipeline log messages |
+| `progress` | Server → Client | Overall progress percentage updates |
+| `step_status` | Server → Client | Individual pipeline step status changes |
+| `script_review` | Server → Client | Script ready for human review |
+| `audio_ready` | Server → Client | TTS audio available for preview |
+| `title_generated` | Server → Client | AI-generated title for the video |
+| `processing_complete` | Server → Client | Pipeline finished with output file list |
+| `processing_error` | Server → Client | Pipeline error with message |
+
+### Project Structure
+
+```
+HM-Tools-YTAutomation/
+├── app.py                      # Flask + Socket.IO backend server
+├── analyze_cat_video.py        # BLIP vision analysis (Step 1)
+├── ollama_generate_script.py   # AI script generation via Ollama (Step 2)
+├── ollama_generate_title.py    # AI title generation via Ollama
+├── kokoro_heart.py             # Kokoro-82M TTS synthesis (Step 3)
+├── rearrange_9x16.py           # 9:16 vertical reformat (Step 6)
+├── burn_hardsub_fit_ass.py     # ASS subtitle burn + music mixing (Step 7)
+├── system_prompt.txt           # System prompt for script generation
+├── system_prompt_title.txt     # System prompt for title generation
+├── templates/
+│   └── index.html              # Web UI dashboard
+├── static/
+│   ├── app.js                  # Frontend logic (Socket.IO, upload, review)
+│   └── style.css               # UI styling
+├── music/
+│   └── videoplayback.m4a       # Background music track
+├── v_raw/                      # Unprocessed input videos (Auto-Select source)
+├── v_fin/                      # Finished output videos (Auto-Select destination)
+├── requirements.txt            # Python dependencies
+└── README.md                   # Project documentation
+```
+
+### Techstack 
+
+| Category | Technologies |
 | :--- | :--- |
-| `v_raw/` | Raw unprocessed videos. Auto-Select picks the oldest file from here. |
-| `v_fin/` | Finished videos. The final processed video is saved here when using Auto-Select. |
-| `music/` | Background music tracks (e.g., `videoplayback.m4a`). |
-| `static/` | Frontend assets (`app.js`, `style.css`). |
-| `templates/` | Flask HTML templates (`index.html`). |
+| **Backend** | Python, Flask, Flask-SocketIO, FFmpeg, MoviePy |
+| **Frontend** | HTML5, Vanilla JS, CSS3, Socket.IO Client |
+| **AI / Vision** | Salesforce/BLIP (image captioning), PyTorch, Transformers |
+| **AI / LLM** | Ollama (LLaMA 3.1) for script & title generation |
+| **AI / Speech** | Kokoro-82M (TTS), OpenAI Whisper via `stable-ts` (STT) |
+| **Video Processing** | FFmpeg, OpenCV, NumPy |
+| **Real-time Comms** | Socket.IO (bidirectional events) |
 
 ---
 
@@ -85,7 +141,7 @@ The project runs as a **Flask + Socket.IO web application** that orchestrates a 
 
 ---
 
-## ⚙️ Setup
+## Setup
 
 ### Prerequisites
 *   **Python 3.10+**
@@ -129,7 +185,7 @@ The project runs as a **Flask + Socket.IO web application** that orchestrates a 
 
 ---
 
-## 🚀 Execution
+## Execution
 
 ### Web UI (Recommended)
 Start the Flask development server:
@@ -170,74 +226,6 @@ python rearrange_9x16.py --input video1.mp4 --output output_9x16_letterbox.mp4 -
 # 6. Burn subtitles (with optional background music)
 python burn_hardsub_fit_ass.py --keep_font_color --ass_color_order rgb --margin_v_ratio 0.24 --base_scale 0.056 --add-music
 ```
-
----
-
-## 🔌 API Endpoints
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/` | Serve the web dashboard |
-| `POST` | `/start_processing` | Upload video & start the full pipeline |
-| `POST` | `/script_review_response` | Submit script review action (approve / regenerate / extend / reduce / edit) |
-| `GET` | `/api/v_raw_oldest` | Get the oldest unprocessed video from `v_raw/` |
-| `POST` | `/api/move_to_v_fin` | Save final video to `v_fin/` and clean up `v_raw/` |
-| `GET` | `/files/<path>` | Serve generated files (videos, audio, etc.) |
-
-### Socket.IO Events
-
-| Event | Direction | Description |
-| :--- | :--- | :--- |
-| `log` | Server → Client | Real-time pipeline log messages |
-| `progress` | Server → Client | Overall progress percentage updates |
-| `step_status` | Server → Client | Individual pipeline step status changes |
-| `script_review` | Server → Client | Script ready for human review |
-| `audio_ready` | Server → Client | TTS audio available for preview |
-| `title_generated` | Server → Client | AI-generated title for the video |
-| `processing_complete` | Server → Client | Pipeline finished with output file list |
-| `processing_error` | Server → Client | Pipeline error with message |
-
----
-
-## 📁 Project Structure
-
-```
-HM-Tools-YTAutomation/
-├── app.py                      # Flask + Socket.IO backend server
-├── analyze_cat_video.py        # BLIP vision analysis (Step 1)
-├── ollama_generate_script.py   # AI script generation via Ollama (Step 2)
-├── ollama_generate_title.py    # AI title generation via Ollama
-├── kokoro_heart.py             # Kokoro-82M TTS synthesis (Step 3)
-├── rearrange_9x16.py           # 9:16 vertical reformat (Step 6)
-├── burn_hardsub_fit_ass.py     # ASS subtitle burn + music mixing (Step 7)
-├── system_prompt.txt           # System prompt for script generation
-├── system_prompt_title.txt     # System prompt for title generation
-├── templates/
-│   └── index.html              # Web UI dashboard
-├── static/
-│   ├── app.js                  # Frontend logic (Socket.IO, upload, review)
-│   └── style.css               # UI styling
-├── music/
-│   └── videoplayback.m4a       # Background music track
-├── v_raw/                      # Unprocessed input videos (Auto-Select source)
-├── v_fin/                      # Finished output videos (Auto-Select destination)
-├── requirements.txt            # Python dependencies
-└── README.md                   # Project documentation
-```
-
----
-
-## 🛠️ Technologies Used
-
-| Category | Technologies |
-| :--- | :--- |
-| **Backend** | Python, Flask, Flask-SocketIO, FFmpeg, MoviePy |
-| **Frontend** | HTML5, Vanilla JS, CSS3, Socket.IO Client |
-| **AI / Vision** | Salesforce/BLIP (image captioning), PyTorch, Transformers |
-| **AI / LLM** | Ollama (LLaMA 3.1) for script & title generation |
-| **AI / Speech** | Kokoro-82M (TTS), OpenAI Whisper via `stable-ts` (STT) |
-| **Video Processing** | FFmpeg, OpenCV, NumPy |
-| **Real-time Comms** | Socket.IO (bidirectional events) |
 
 ---
 
