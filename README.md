@@ -20,7 +20,8 @@ https://github.com/user-attachments/assets/31bfbcb7-30d6-4e1b-a849-686c7b6bef26
 ---
 
 ## 📋 Overview
-<img width="1760" height="1317" alt="Screenshot 2026-03-12 020724" src="https://github.com/user-attachments/assets/e7b4e642-c6a6-45e0-84a5-0a27f935ff0c" />
+
+<img width="1400" height="1926" alt="127 0 0 1_5000_ (3)" src="https://github.com/user-attachments/assets/b02cc74d-560e-4d2d-864e-e856043b2c08" />
 
 **Multimodal AI Content Pipeline** is a web-based tool that automates the creation of vertical short-form content from raw video footage. It provides a **Flask-powered web UI** with real-time progress tracking via Socket.IO, and leverages AI models for vision analysis, script generation, speech synthesis, and subtitle styling.
 
