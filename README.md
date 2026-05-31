@@ -1,27 +1,46 @@
 <div align="center">
     <h1>Video Analysis Automation</h1>
+    <p>Automated vertical short-form video generation from raw footage via vision analysis, AI scripting, neural TTS, and styled subtitles, all behind a real-time web UI.</p>
 
 https://github.com/user-attachments/assets/31bfbcb7-30d6-4e1b-a849-686c7b6bef26
 
 </div>
 
 <div align="center">
-<a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-gray?style=flat&logo=python&logoColor=white&labelColor=3776AB" alt="Python"></a>
-<a href="https://flask.palletsprojects.com/"><img src="https://img.shields.io/badge/Flask-3.0+-gray?style=flat&logo=flask&logoColor=white&labelColor=000000" alt="Flask"></a>
-<a href="https://opencv.org/"><img src="https://img.shields.io/badge/OpenCV-4.9+-gray?style=flat&logo=opencv&logoColor=white&labelColor=5C3EE8" alt="OpenCV"></a>
-<a href="https://numpy.org/"><img src="https://img.shields.io/badge/NumPy-1.24+-gray?style=flat&logo=numpy&logoColor=white&labelColor=013243" alt="NumPy"></a>
-<a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.3+-gray?style=flat&logo=pytorch&logoColor=white&labelColor=EE4C2C" alt="PyTorch"></a>
-<a href="https://huggingface.co/docs/transformers/index"><img src="https://img.shields.io/badge/Transformers-4.45+-gray?style=flat&logo=huggingface&logoColor=FFD21E&labelColor=454545" alt="Transformers"></a>
-<a href="https://github.com/openai/whisper"><img src="https://img.shields.io/badge/OpenAI%20Whisper-v20231117-gray?style=flat&logo=openai&logoColor=white&labelColor=412991" alt="OpenAI Whisper"></a>
-<a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/FFmpeg-6.0+-gray?style=flat&logo=ffmpeg&logoColor=white&labelColor=007808" alt="FFmpeg"></a>
-<a href="https://ollama.com/"><img src="https://img.shields.io/badge/Ollama-LLaMA_3.1-gray?style=flat&logo=meta&logoColor=white&labelColor=0467DF" alt="Ollama"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-gray?style=flat&labelColor=blue" alt="License"></a>
+    <br>
+    <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-gray?style=flat&logo=python&logoColor=white&labelColor=3776AB" alt="Python"></a>
+    <a href="https://flask.palletsprojects.com/"><img src="https://img.shields.io/badge/Flask-3.0+-gray?style=flat&logo=flask&logoColor=white&labelColor=000000" alt="Flask"></a>
+    <a href="https://opencv.org/"><img src="https://img.shields.io/badge/OpenCV-4.9+-gray?style=flat&logo=opencv&logoColor=white&labelColor=5C3EE8" alt="OpenCV"></a>
+    <a href="https://numpy.org/"><img src="https://img.shields.io/badge/NumPy-1.24+-gray?style=flat&logo=numpy&logoColor=white&labelColor=013243" alt="NumPy"></a>
+    <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.3+-gray?style=flat&logo=pytorch&logoColor=white&labelColor=EE4C2C" alt="PyTorch"></a>
+    <a href="https://huggingface.co/docs/transformers/index"><img src="https://img.shields.io/badge/Transformers-4.45+-gray?style=flat&logo=huggingface&logoColor=FFD21E&labelColor=454545" alt="Transformers"></a>
+    <a href="https://github.com/openai/whisper"><img src="https://img.shields.io/badge/OpenAI%20Whisper-v20231117-gray?style=flat&logo=openai&logoColor=white&labelColor=412991" alt="OpenAI Whisper"></a>
+    <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/FFmpeg-6.0+-gray?style=flat&logo=ffmpeg&logoColor=white&labelColor=007808" alt="FFmpeg"></a>
+    <a href="https://ollama.com/"><img src="https://img.shields.io/badge/Ollama-LLaMA_3.1-gray?style=flat&logo=meta&logoColor=white&labelColor=0467DF" alt="Ollama"></a>
 </div>
 
 ---
 
-## 📋 Overview
+## Table of Contents
 
-<img width="1400" height="1926" alt="127 0 0 1_5000_ (3)" src="https://github.com/user-attachments/assets/b02cc74d-560e-4d2d-864e-e856043b2c08" />
+- [Overview](#-overview)
+- [Key Concepts](#key-concepts)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Scenarios](#scenarios)
+- [Setup](#setup)
+- [Configuration](#configuration)
+- [Execution](#execution)
+- [Troubleshooting](#troubleshooting)
+- [Model Licenses & Acknowledgments](#model-licenses--acknowledgments)
+- [License](#license)
+
+---
+
+## Overview
+
+<img width="1400" height="1926" alt="Web dashboard screenshot" src="https://github.com/user-attachments/assets/b02cc74d-560e-4d2d-864e-e856043b2c08" />
 
 **Video Analysis Automation** is a web-based tool that automates the creation of vertical short-form content from raw video footage. It provides a **Flask-powered web UI** with real-time progress tracking via Socket.IO, and leverages AI models for vision analysis, script generation, speech synthesis, and subtitle styling.
 
@@ -57,15 +76,17 @@ https://github.com/user-attachments/assets/31bfbcb7-30d6-4e1b-a849-686c7b6bef26
 The project runs as a **Flask + Socket.IO web application** that orchestrates a sequential pipeline in a background thread.
 
 ### Pipeline Steps
-1.  **Video Analysis** — `analyze_cat_video.py` samples frames at 1 FPS → `output.txt`
-2.  **Script Generation** — `ollama_generate_script.py` generates narration from analysis → `input.txt`
-3.  **Script Review** — Human-in-the-loop: edit, regenerate, extend, reduce, or approve
-4.  **Title Generation** — `ollama_generate_title.py` creates a title from the approved script → `generated_title.txt`
-5.  **TTS Synthesis** — `kokoro_heart.py` generates speech audio → `heart_all.wav`
-6.  **Subtitle Alignment** — `stable-ts` generates word-level subtitles → `heart_all.srt`
-7.  **Vertical Reformat** — `rearrange_9x16.py` crops/letterboxes to 9:16 → `output_9x16_letterbox.mp4`
-8.  **Subtitle Burn + Music** — `burn_hardsub_fit_ass.py` burns ASS subtitles and optionally mixes background music → final titled `.mp4`
 
+| No | Step | Script | Output |
+| :-- | :--- | :--- | :--- |
+| 1 | Video Analysis — samples frames at 1 FPS | `analyze_cat_video.py` | `output.txt` |
+| 2 | Script Generation — narration from analysis | `ollama_generate_script.py` | `input.txt` |
+| 3 | Script Review — human-in-the-loop (edit / regenerate / extend / reduce / approve) | — | — |
+| 4 | Title Generation — title from approved script | `ollama_generate_title.py` | `generated_title.txt` |
+| 5 | TTS Synthesis — speech audio | `kokoro_heart.py` | `heart_all.wav` |
+| 6 | Subtitle Alignment — word-level subtitles | `stable-ts` | `heart_all.srt` |
+| 7 | Vertical Reformat — crop / letterbox to 9:16 | `rearrange_9x16.py` | `output_9x16_letterbox.mp4` |
+| 8 | Subtitle Burn + Music — burn ASS subtitles, optionally mix music | `burn_hardsub_fit_ass.py` | final titled `.mp4` |
 
 ### API Endpoints
 
@@ -94,14 +115,14 @@ The project runs as a **Flask + Socket.IO web application** that orchestrates a 
 ### Project Structure
 
 ```
-HM-Tools-YTAutomation/
+video-analysis-automation/
 ├── app.py                      # Flask + Socket.IO backend server
 ├── analyze_cat_video.py        # BLIP vision analysis (Step 1)
 ├── ollama_generate_script.py   # AI script generation via Ollama (Step 2)
-├── ollama_generate_title.py    # AI title generation via Ollama
-├── kokoro_heart.py             # Kokoro-82M TTS synthesis (Step 3)
-├── rearrange_9x16.py           # 9:16 vertical reformat (Step 6)
-├── burn_hardsub_fit_ass.py     # ASS subtitle burn + music mixing (Step 7)
+├── ollama_generate_title.py    # AI title generation via Ollama (Step 4)
+├── kokoro_heart.py             # Kokoro-82M TTS synthesis (Step 5)
+├── rearrange_9x16.py           # 9:16 vertical reformat (Step 7)
+├── burn_hardsub_fit_ass.py     # ASS subtitle burn + music mixing (Step 8)
 ├── system_prompt.txt           # System prompt for script generation
 ├── system_prompt_title.txt     # System prompt for title generation
 ├── templates/
@@ -117,7 +138,9 @@ HM-Tools-YTAutomation/
 └── README.md                   # Project documentation
 ```
 
-### Techstack 
+---
+
+## Tech Stack
 
 | Category | Technologies |
 | :--- | :--- |
@@ -136,7 +159,7 @@ HM-Tools-YTAutomation/
 | Scenario | Objective |
 | :--- | :--- |
 | **Full Web UI Run** | Upload or auto-select a video, let AI generate a script, preview audio, approve, and download the final titled vertical short. |
-| **Batch Processing** | Place videos in `v_raw/`, use Auto-Select to process them one at a time, finished files land in `v_fin/`. |
+| **Batch Processing** | Place videos in `v_raw/`, use Auto-Select to process them one at a time; finished files land in `v_fin/`. |
 | **Script Iteration** | Use regenerate/extend/reduce buttons to refine the AI-generated script before committing to TTS. |
 | **Subtitle Styling** | Use the burn tool standalone to apply high-readability, colored subtitles to any existing vertical video. |
 
@@ -146,26 +169,26 @@ HM-Tools-YTAutomation/
 
 ### Prerequisites
 *   **Python 3.10+**
-*   **FFmpeg** installed and added to system PATH.
-*   **Ollama** installed and running locally with `llama3.1:latest` model pulled.
-*   **NVIDIA GPU** (Recommended) with CUDA 12.1+ for fast inference.
+*   **FFmpeg** installed and added to your system `PATH` (verify with `ffmpeg -version`).
+*   **Ollama** installed and running locally with the `llama3.1:latest` model pulled.
+*   **NVIDIA GPU (recommended)** with CUDA 12.1+. The pipeline loads BLIP, Kokoro-82M, Whisper, and an 8B LLM; **~8 GB VRAM** is a comfortable floor for quantized LLaMA 3.1. CPU-only works but is significantly slower.
 
 ### Installation
+
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/muhammad-thariq/HM-Tools-YTAutomation.git
-    cd HM-Tools-YTAutomation
+    git clone https://github.com/muhammad-thariq/video-analysis-automation.git
+    cd video-analysis-automation
     ```
 
-2.  Create and activate a virtual environment (Recommended):
+2.  Create and activate a virtual environment (recommended):
     ```bash
-    # Create virtual environment
     python -m venv .venv
 
-    # Activate on Windows
+    # Windows
     .\.venv\Scripts\activate
 
-    # Activate on Linux/macOS
+    # Linux / macOS
     source .venv/bin/activate
     ```
 
@@ -173,12 +196,12 @@ HM-Tools-YTAutomation/
     ```bash
     # Install PyTorch with CUDA support first
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-    
+
     # Install remaining requirements
     pip install -r requirements.txt
     ```
 
-4.  Ensure Ollama is running:
+4.  Ensure Ollama is running and the model is available:
     ```bash
     ollama pull llama3.1:latest
     ollama serve
@@ -186,16 +209,32 @@ HM-Tools-YTAutomation/
 
 ---
 
+## Configuration
+
+Common settings you may want to adjust:
+
+| Setting | Where | Notes |
+| :--- | :--- | :--- |
+| **LLM model** | `ollama_generate_script.py`, `ollama_generate_title.py` | Swap `llama3.1:latest` for any model you've pulled in Ollama. |
+| **Script style** | `system_prompt.txt`, `system_prompt_title.txt` | Edit the system prompts to control tone, length, and titling style. |
+| **Input / output folders** | `v_raw/`, `v_fin/` | Auto-Select reads from `v_raw/`; finished videos are saved to `v_fin/`. |
+| **Background music** | `music/videoplayback.m4a` | Replace this file or pass a different track to the burn step. |
+| **Server port** | `app.py` | Defaults to `5000`. |
+
+> If you maintain any secrets or machine-specific paths, keep them out of version control via a `.env` file or local config rather than hard-coding them.
+
+---
+
 ## Execution
 
-### Web UI (Recommended)
+### Web UI (recommended)
 Start the Flask development server:
 ```bash
 python app.py
 ```
 Then open **http://localhost:5000** in your browser.
 
-**Web UI Workflow:**
+**Workflow:**
 1.  **Upload** a video via drag-and-drop, or use **Auto-Select** to pick the oldest video from `v_raw/`.
 2.  Optionally set a **Video Topic** for context-aware script generation.
 3.  Configure toggles: **Mute Audio**, **Add Music**, **Target Script Length**.
@@ -205,33 +244,68 @@ Then open **http://localhost:5000** in your browser.
 7.  Once approved, the AI generates a **title** and the pipeline completes.
 8.  Click **Download Video** to get the final output. If Auto-Select was used, the finished video is also saved to `v_fin/`.
 
-### CLI (Manual Pipeline)
-You can also run individual pipeline steps from the command line:
+### CLI (manual pipeline)
+You can also run individual steps from the command line. Step numbers below match the [Pipeline Steps](#pipeline-steps) table:
 
 ```bash
-# 1. Analyze video
+# Step 1 — Analyze video
 python analyze_cat_video.py --video video1.mp4 --out output.txt --fps 1.0
 
-# 2. Generate script via Ollama
+# Step 2 — Generate script via Ollama
 python ollama_generate_script.py
 
-# 3. Generate TTS audio
+# Step 4 — Generate title via Ollama
+python ollama_generate_title.py
+
+# Step 5 — Generate TTS audio
 python kokoro_heart.py
 
-# 4. Generate subtitles
-stable-ts heart_all.wav --output heart_all.srt --output_format srt --device cuda --language en --word_timestamps True --max_chars 42 --max_words 3
+# Step 6 — Generate subtitles
+stable-ts heart_all.wav --output heart_all.srt --output_format srt \
+  --device cuda --language en --word_timestamps True --max_chars 42 --max_words 3
 
-# 5. Reformat to 9:16
+# Step 7 — Reformat to 9:16
 python rearrange_9x16.py --input video1.mp4 --output output_9x16_letterbox.mp4 --last 3 --letterbox
 
-# 6. Burn subtitles (with optional background music)
-python burn_hardsub_fit_ass.py --keep_font_color --ass_color_order rgb --margin_v_ratio 0.24 --base_scale 0.056 --add-music
+# Step 8 — Burn subtitles (with optional background music)
+python burn_hardsub_fit_ass.py --keep_font_color --ass_color_order rgb \
+  --margin_v_ratio 0.24 --base_scale 0.056 --add-music
 ```
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause & fix |
+| :--- | :--- |
+| `ffmpeg: command not found` | FFmpeg isn't on your `PATH`. Reinstall or add it, then verify with `ffmpeg -version`. |
+| Connection refused to Ollama / script generation hangs | Ollama isn't running. Start it with `ollama serve` and confirm the model is pulled (`ollama list`). |
+| `CUDA out of memory` | Close other GPU processes, use a smaller/quantized LLM, or run on CPU (slower). |
+| `torch` installs CPU-only build | Reinstall using the CUDA index URL shown in [Installation](#installation) **before** other requirements. |
+| First run is very slow | Model weights (BLIP, Kokoro, Whisper) download on first use and are cached afterward. |
+| Subtitles misaligned or off-screen | Tune `--margin_v_ratio` and `--base_scale` in the burn step for your footage. |
+
+---
+
+## Model Licenses & Acknowledgments
+
+This project builds on excellent open models — please review and comply with each upstream license before commercial use:
+
+- **[Salesforce/BLIP](https://huggingface.co/Salesforce/blip-image-captioning-base)** — image captioning.
+- **[Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)** — neural TTS.
+- **[OpenAI Whisper](https://github.com/openai/whisper)** (via [`stable-ts`](https://github.com/jianfch/stable-ts)) — word-level transcription.
+- **[Meta LLaMA 3.1](https://ai.meta.com/llama/)** (via [Ollama](https://ollama.com/)) — subject to the LLaMA 3.1 Community License.
+
+---
+
+## License
+
+This project is released under the **MIT License**. See [`LICENSE`](LICENSE) for details. *(Replace if you choose a different license.)*
 
 ---
 
 <div align="center">
 
-*[Back to Top](#multimodal-ai-content-pipeline)*
+*[Back to Top](#video-analysis-automation)*
 
 </div>
