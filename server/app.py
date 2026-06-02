@@ -11,8 +11,10 @@ from flask_socketio import SocketIO, emit
 # -------------------------------------------------------
 # CONFIG
 # -------------------------------------------------------
-PCC_DIR = Path(r"C:\Users\Thariq\Documents\GitHub\HM-Tools-YTAutomation").resolve()
-SCRIPTS_DIR = Path(__file__).parent.resolve()  # HM-Tools-YTAutomation directory
+SCRIPTS_DIR = Path(__file__).parent.resolve()   # server/
+PCC_DIR = SCRIPTS_DIR.parent                    # repo root (holds v_raw, v_fin, v_uploaded)
+TEMP_DIR = PCC_DIR / "temp"                     # runtime working dir
+
 UPLOAD_VIDEO_NAME = "video1.mp4"
 UPLOAD_TEXT_NAME = "input.txt"
 
@@ -21,7 +23,11 @@ VENV_PYTHON = sys.executable
 # venv Scripts dir (Windows)
 VENV_SCRIPTS = Path(VENV_PYTHON).parent  # ...\.venv\Scripts
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(PCC_DIR / "interface" / "templates"),
+    static_folder=str(PCC_DIR / "interface" / "static"),
+)
 app.secret_key = "super-secret-thariq"
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -35,6 +41,13 @@ analysis_review_action = {"action": "approve", "text": ""}
 # Gate for script review (after step 2)
 script_review_gate = threading.Event()
 script_review_action = {"action": "approve", "text": ""}
+
+# -------------------------------------------------------
+# PIPELINE CANCELLATION
+# -------------------------------------------------------
+pipeline_cancel = threading.Event()      # Set to request cancellation
+current_subprocess = None                # Track the running subprocess
+current_subprocess_lock = threading.Lock()
 
 # -------------------------------------------------------
 # PIPELINE STEPS CONFIGURATION
@@ -118,15 +131,25 @@ def emit_log(message):
     socketio.emit("log_message", {"message": message})
 
 
+def check_cancelled():
+    """Return True if the pipeline has been cancelled."""
+    return pipeline_cancel.is_set()
+
+
 def run_cmd(cmd, cwd: Path, step_info):
     """
     Run a command and emit progress/logs in real-time.
     Returns (ok, text_log).
-    
+
     NOTE: All commands run in the venv environment:
     - Python scripts use VENV_PYTHON directly
     - CLI tools like 'stable-ts' use venv version via prepended PATH (VENV_SCRIPTS)
     """
+    global current_subprocess
+
+    if check_cancelled():
+        return False, "[CANCELLED]"
+
     env = os.environ.copy()
     # CRITICAL: Prepend venv Scripts so CLI tools (stable-ts, etc.) use venv versions
     env["PATH"] = str(VENV_SCRIPTS) + os.pathsep + env.get("PATH", "")
@@ -150,9 +173,21 @@ def run_cmd(cmd, cwd: Path, step_info):
             env=env,
         )
 
+        # Track subprocess so it can be killed on cancel
+        with current_subprocess_lock:
+            current_subprocess = proc
+
         # Read output in real-time to prevent blocking
         output_lines = []
         while True:
+            # Check cancellation each iteration
+            if check_cancelled():
+                proc.kill()
+                proc.wait()
+                emit_step_status(step_id, "failed", f"{step_info['name']} cancelled")
+                emit_log(f"🛑 {step_info['name']} cancelled")
+                return False, "[CANCELLED]"
+
             line = proc.stdout.readline()
             if not line and proc.poll() is not None:
                 break
@@ -162,6 +197,10 @@ def run_cmd(cmd, cwd: Path, step_info):
                 # Only emit non-empty lines to reduce spam
                 if line.strip():
                     emit_log(line)
+
+        # Clear subprocess tracker
+        with current_subprocess_lock:
+            current_subprocess = None
 
         # Get return code
         returncode = proc.wait()
@@ -178,6 +217,8 @@ def run_cmd(cmd, cwd: Path, step_info):
             return False, full_output
 
     except Exception as e:
+        with current_subprocess_lock:
+            current_subprocess = None
         emit_step_status(step_id, "failed", f"{step_info['name']} error: {str(e)}")
         emit_log(f"✗ ERROR: {str(e)}")
         return False, f"$ {' '.join(cmd)}\n[ERROR] {e}\n"
@@ -186,7 +227,7 @@ def run_cmd(cmd, cwd: Path, step_info):
 def final_video_name_from_input_txt() -> str | None:
     """Get the final video filename based on generated_title.txt or input.txt first line."""
     import re
-    generated_path = PCC_DIR / "generated_title.txt"
+    generated_path = TEMP_DIR / "generated_title.txt"
     if generated_path.exists():
         try:
             raw_title = generated_path.read_text(encoding="utf-8", errors="ignore").strip()
@@ -197,7 +238,7 @@ def final_video_name_from_input_txt() -> str | None:
         except Exception:
             pass
 
-    input_path = PCC_DIR / UPLOAD_TEXT_NAME
+    input_path = TEMP_DIR / UPLOAD_TEXT_NAME
     if not input_path.exists():
         return None
     try:
@@ -224,31 +265,34 @@ def final_video_name_from_input_txt() -> str | None:
 def process_pipeline():
     """Main pipeline processing function (runs in background thread)."""
     try:
+        # Clear any previous cancellation
+        pipeline_cancel.clear()
+
         emit_log("=" * 60)
         emit_log("🚀 Starting Video Processing Pipeline")
         emit_log(f"🐍 Using Python: {VENV_PYTHON}")
         emit_log(f"📁 Scripts PATH: {VENV_SCRIPTS}")
         emit_log(f"📂 Scripts DIR: {SCRIPTS_DIR}")
-        emit_log(f"📂 Working DIR: {PCC_DIR}")
+        emit_log(f"📂 Working DIR: {TEMP_DIR}")
         emit_log("=" * 60)
 
         # Initialize all steps as queued
         for step in PIPELINE_STEPS:
             emit_step_status(step["id"], "queued", "Waiting...")
 
-        skip_analysis = (PCC_DIR / "skip_analysis.txt").exists()
+        skip_analysis = (TEMP_DIR / "skip_analysis.txt").exists()
 
         if skip_analysis:
             emit_log("⏭️ Skipping video analysis and analysis approval...")
             step1 = PIPELINE_STEPS[0]
             emit_step_status(step1["id"], "completed", f"{step1['name']} skipped")
             emit_progress(step1["progress_end"])
-            
+
             step2 = PIPELINE_STEPS[1]
             emit_step_status(step2["id"], "completed", f"{step2['name']} skipped")
             emit_progress(step2["progress_end"])
-            
-            output_txt = PCC_DIR / "output.txt"
+
+            output_txt = TEMP_DIR / "output.txt"
             if output_txt.exists():
                 output_txt.unlink()
                 emit_log("🗑️ Removed existing output.txt (Analysis Skipped)")
@@ -256,15 +300,15 @@ def process_pipeline():
             # Step 1: analyze_cat_video.py
             step = PIPELINE_STEPS[0]
             # Delete existing output.txt to avoid any prompts
-            output_txt = PCC_DIR / "output.txt"
+            output_txt = TEMP_DIR / "output.txt"
             if output_txt.exists():
                 output_txt.unlink()
                 emit_log("🗑️ Removed existing output.txt")
-            
+
             ok, log = run_cmd(
                 [
                     VENV_PYTHON,
-                    str(SCRIPTS_DIR / "analyze_cat_video.py"),  # Absolute path
+                    str(SCRIPTS_DIR / "analyze_cat_video.py"),
                     "--video",
                     UPLOAD_VIDEO_NAME,
                     "--out",
@@ -272,7 +316,7 @@ def process_pipeline():
                     "--fps",
                     "1.0",
                 ],
-                PCC_DIR,
+                TEMP_DIR,
                 step,
             )
             if not ok:
@@ -283,7 +327,7 @@ def process_pipeline():
             # ── HUMAN-IN-THE-LOOP: pause for analysis review ──
             step = PIPELINE_STEPS[1]  # Analysis Approval step
             emit_step_status(step["id"], "running", step["description"])
-            output_txt = PCC_DIR / "output.txt"
+            output_txt = TEMP_DIR / "output.txt"
             analysis_text = output_txt.read_text(encoding="utf-8", errors="ignore") if output_txt.exists() else ""
 
             emit_log("✏️ Waiting for analysis review...")
@@ -306,22 +350,22 @@ def process_pipeline():
         # Step 3: ollama_generate_script.py
         step = PIPELINE_STEPS[2]
         ollama_cmd = [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_script.py")]
-        
+
         # Use contextual prompt if analysis was skipped
         if skip_analysis:
-            ollama_cmd += ["--sys-prompt", "system_prompt_context.txt"]
-            
-        topic_file = PCC_DIR / "video_topic.txt"
+            ollama_cmd += ["--sys-prompt", str(SCRIPTS_DIR / "system_prompt_context.txt")]
+
+        topic_file = TEMP_DIR / "video_topic.txt"
         if topic_file.exists():
             ollama_cmd += ["--topic", str(topic_file)]
-        target_chars_file = PCC_DIR / "target_chars.txt"
+        target_chars_file = TEMP_DIR / "target_chars.txt"
         if target_chars_file.exists():
             tc = target_chars_file.read_text(encoding="utf-8").strip()
             if tc and int(tc) > 0:
                 ollama_cmd += ["--target-chars", tc]
         ok, log = run_cmd(
             ollama_cmd,
-            PCC_DIR,
+            TEMP_DIR,
             step,
         )
         if not ok:
@@ -332,7 +376,7 @@ def process_pipeline():
         # ── HUMAN-IN-THE-LOOP: pause for script review ──
         audio_generated_during_review = False
         while True:
-            input_txt_path = PCC_DIR / UPLOAD_TEXT_NAME
+            input_txt_path = TEMP_DIR / UPLOAD_TEXT_NAME
             script_text = input_txt_path.read_text(encoding="utf-8", errors="ignore") if input_txt_path.exists() else ""
 
             emit_log("✏️ Waiting for script review...")
@@ -352,7 +396,7 @@ def process_pipeline():
                 emit_log("🔉 Generating TTS audio...")
 
                 # Delete existing audio
-                heart_wav = PCC_DIR / "heart_all.wav"
+                heart_wav = TEMP_DIR / "heart_all.wav"
                 if heart_wav.exists():
                     heart_wav.unlink()
 
@@ -360,7 +404,7 @@ def process_pipeline():
                 tts_step = PIPELINE_STEPS[2]  # TTS step info for logging
                 ok, log = run_cmd(
                     [VENV_PYTHON, str(SCRIPTS_DIR / "kokoro_heart.py")],
-                    PCC_DIR,
+                    TEMP_DIR,
                     tts_step,
                 )
                 if not ok:
@@ -390,7 +434,7 @@ def process_pipeline():
 
             if action == "extend":
                 # Delete audio if it exists (script changed)
-                heart_wav = PCC_DIR / "heart_all.wav"
+                heart_wav = TEMP_DIR / "heart_all.wav"
                 if heart_wav.exists():
                     heart_wav.unlink()
                     emit_log("🗑️ Audio deleted (script changed)")
@@ -400,10 +444,10 @@ def process_pipeline():
                 input_txt_path.write_text(new_text, encoding="utf-8")
                 emit_log("➕ Extending script by ~50% (re-running Ollama)...")
                 extend_cmd = [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_script.py"), "--extend"]
-                
+
                 if skip_analysis:
-                    extend_cmd += ["--sys-prompt", "system_prompt_context.txt"]
-                
+                    extend_cmd += ["--sys-prompt", str(SCRIPTS_DIR / "system_prompt_context.txt")]
+
                 if topic_file.exists():
                     extend_cmd += ["--topic", str(topic_file)]
                 target_chars = script_review_action.get("target_chars", 0)
@@ -411,7 +455,7 @@ def process_pipeline():
                     extend_cmd += ["--target-chars", str(target_chars)]
                 ok, log = run_cmd(
                     extend_cmd,
-                    PCC_DIR,
+                    TEMP_DIR,
                     step,
                 )
                 if not ok:
@@ -423,7 +467,7 @@ def process_pipeline():
 
             if action == "reduce":
                 # Delete audio if it exists (script changed)
-                heart_wav = PCC_DIR / "heart_all.wav"
+                heart_wav = TEMP_DIR / "heart_all.wav"
                 if heart_wav.exists():
                     heart_wav.unlink()
                     emit_log("🗑️ Audio deleted (script changed)")
@@ -433,10 +477,10 @@ def process_pipeline():
                 input_txt_path.write_text(new_text, encoding="utf-8")
                 emit_log("➖ Reducing script by ~50% (re-running Ollama)...")
                 reduce_cmd = [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_script.py"), "--reduce"]
-                
+
                 if skip_analysis:
-                    reduce_cmd += ["--sys-prompt", "system_prompt_context.txt"]
-                
+                    reduce_cmd += ["--sys-prompt", str(SCRIPTS_DIR / "system_prompt_context.txt")]
+
                 if topic_file.exists():
                     reduce_cmd += ["--topic", str(topic_file)]
                 target_chars = script_review_action.get("target_chars", 0)
@@ -444,7 +488,7 @@ def process_pipeline():
                     reduce_cmd += ["--target-chars", str(target_chars)]
                 ok, log = run_cmd(
                     reduce_cmd,
-                    PCC_DIR,
+                    TEMP_DIR,
                     step,
                 )
                 if not ok:
@@ -456,7 +500,7 @@ def process_pipeline():
 
             if action == "regenerate":
                 # Delete audio if it exists (script changed)
-                heart_wav = PCC_DIR / "heart_all.wav"
+                heart_wav = TEMP_DIR / "heart_all.wav"
                 if heart_wav.exists():
                     heart_wav.unlink()
                     emit_log("🗑️ Audio deleted (script changed)")
@@ -464,10 +508,10 @@ def process_pipeline():
 
                 emit_log("🔄 Regenerating script (re-running Ollama)...")
                 regen_cmd = [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_script.py")]
-                
+
                 if skip_analysis:
-                    regen_cmd += ["--sys-prompt", "system_prompt_context.txt"]
-                
+                    regen_cmd += ["--sys-prompt", str(SCRIPTS_DIR / "system_prompt_context.txt")]
+
                 if topic_file.exists():
                     regen_cmd += ["--topic", str(topic_file)]
                 target_chars = script_review_action.get("target_chars", 0)
@@ -475,7 +519,7 @@ def process_pipeline():
                     regen_cmd += ["--target-chars", str(target_chars)]
                 ok, log = run_cmd(
                     regen_cmd,
-                    PCC_DIR,
+                    TEMP_DIR,
                     step,
                 )
                 if not ok:
@@ -497,14 +541,14 @@ def process_pipeline():
             break
 
         # ── TITLE GENERATION (runs after any approve path exits the loop) ──
-        title_txt_path = PCC_DIR / "generated_title.txt"
+        title_txt_path = TEMP_DIR / "generated_title.txt"
         if title_txt_path.exists():
             title_txt_path.unlink()
         emit_log("🧠 Generating title with AI...")
         try:
             subprocess.run(
                 [VENV_PYTHON, str(SCRIPTS_DIR / "ollama_generate_title.py")],
-                cwd=str(PCC_DIR), check=True, capture_output=True, text=True
+                cwd=str(TEMP_DIR), check=True, capture_output=True, text=True
             )
             if title_txt_path.exists():
                 generated_title = title_txt_path.read_text(encoding="utf-8").strip()
@@ -513,7 +557,7 @@ def process_pipeline():
         except Exception as e:
             emit_log(f"⚠ Title generation failed: {e}")
 
-        # Step 3: kokoro_heart.py (skip if audio was already generated during review)
+        # Step 4: kokoro_heart.py (skip if audio was already generated during review)
         step = PIPELINE_STEPS[3]
         if audio_generated_during_review:
             emit_log("⏭️ Skipping TTS — audio was already generated during review")
@@ -521,14 +565,14 @@ def process_pipeline():
             emit_progress(step["progress_end"])
         else:
             # Delete existing heart_all.wav to avoid any prompts
-            heart_wav = PCC_DIR / "heart_all.wav"
+            heart_wav = TEMP_DIR / "heart_all.wav"
             if heart_wav.exists():
                 heart_wav.unlink()
                 emit_log("🗑️ Removed existing heart_all.wav")
-            
+
             ok, log = run_cmd(
                 [VENV_PYTHON, str(SCRIPTS_DIR / "kokoro_heart.py")],
-                PCC_DIR,
+                TEMP_DIR,
                 step,
             )
             if not ok:
@@ -536,14 +580,14 @@ def process_pipeline():
                 socketio.emit("processing_error", {"message": "TTS generation failed"})
                 return
 
-        # Step 4: stable-ts
+        # Step 5: stable-ts
         step = PIPELINE_STEPS[4]
         # CRITICAL: Delete existing heart_all.srt to prevent user input prompt (y/n)
-        heart_srt = PCC_DIR / "heart_all.srt"
+        heart_srt = TEMP_DIR / "heart_all.srt"
         if heart_srt.exists():
             heart_srt.unlink()
             emit_log("🗑️ Removed existing heart_all.srt to prevent overwrite prompt")
-        
+
         # stable-ts uses venv version via PATH (prepended in run_cmd with VENV_SCRIPTS)
         ok, log = run_cmd(
             [
@@ -564,7 +608,7 @@ def process_pipeline():
                 "--max_words",
                 "3",
             ],
-            PCC_DIR,
+            TEMP_DIR,
             step,
         )
         if not ok:
@@ -572,12 +616,12 @@ def process_pipeline():
             socketio.emit("processing_error", {"message": "Subtitle generation failed"})
             return
 
-        # Step 5: Color replacement (inline Python — no PowerShell needed)
+        # Step 6: Color replacement (inline Python — no PowerShell needed)
         step = PIPELINE_STEPS[5]
         emit_step_status(step["id"], "running", step["description"])
         emit_log(f"▶ Running: Inline color replacement (#00ff00 → #ff00ffff)")
         try:
-            srt_path = PCC_DIR / "heart_all.srt"
+            srt_path = TEMP_DIR / "heart_all.srt"
             text = srt_path.read_text(encoding="utf-8")
             text = text.replace("#00ff00", "#ff00ffff")
             srt_path.write_text(text, encoding="utf-8")
@@ -589,18 +633,18 @@ def process_pipeline():
             emit_step_status(step["id"], "completed", "Color replacement done")
             emit_progress(step["progress_end"])
 
-        # Step 6: rearrange_9x16.py
+        # Step 7: rearrange_9x16.py
         step = PIPELINE_STEPS[6]
         # Delete existing output video to avoid any prompts
-        output_video = PCC_DIR / "output_9x16_letterbox.mp4"
+        output_video = TEMP_DIR / "output_9x16_letterbox.mp4"
         if output_video.exists():
             output_video.unlink()
             emit_log("🗑️ Removed existing output_9x16_letterbox.mp4")
-        
+
         ok, log = run_cmd(
             [
-                VENV_PYTHON,  # Using venv Python
-                str(SCRIPTS_DIR / "rearrange_9x16.py"),  # Absolute path
+                VENV_PYTHON,
+                str(SCRIPTS_DIR / "rearrange_9x16.py"),
                 "--input",
                 "video1.mp4",
                 "--output",
@@ -609,7 +653,7 @@ def process_pipeline():
                 "3",
                 "--letterbox",
             ],
-            PCC_DIR,
+            TEMP_DIR,
             step,
         )
         if not ok:
@@ -617,11 +661,11 @@ def process_pipeline():
             socketio.emit("processing_error", {"message": "Video reformatting failed"})
             return
 
-        # Step 7: burn_hardsub_fit_ass.py
+        # Step 8: burn_hardsub_fit_ass.py
         step = PIPELINE_STEPS[7]
         burn_cmd = [
-            VENV_PYTHON,  # Using venv Python
-            str(SCRIPTS_DIR / "burn_hardsub_fit_ass.py"),  # Absolute path - CRITICAL FIX
+            VENV_PYTHON,
+            str(SCRIPTS_DIR / "burn_hardsub_fit_ass.py"),
             "--keep_font_color",
             "--ass_color_order",
             "rgb",
@@ -631,13 +675,13 @@ def process_pipeline():
             "0.056",
         ]
 
-        add_music_file = PCC_DIR / "add_music.txt"
+        add_music_file = TEMP_DIR / "add_music.txt"
         if add_music_file.exists() and add_music_file.read_text(encoding="utf-8").strip() == "true":
             burn_cmd.append("--add-music")
 
         ok, log = run_cmd(
             burn_cmd,
-            PCC_DIR,
+            TEMP_DIR,
             step,
         )
         if not ok:
@@ -653,11 +697,11 @@ def process_pipeline():
             "heart_all.srt",
             "output_9x16_letterbox.mp4",
         ]:
-            if (PCC_DIR / fname).exists():
+            if (TEMP_DIR / fname).exists():
                 produced_files.append(fname)
 
         maybe_final = final_video_name_from_input_txt()
-        if maybe_final and (PCC_DIR / maybe_final).exists():
+        if maybe_final and (TEMP_DIR / maybe_final).exists():
             produced_files.append(maybe_final)
 
         emit_log("=" * 60)
@@ -667,8 +711,12 @@ def process_pipeline():
         socketio.emit("processing_complete", {"files": produced_files})
 
     except Exception as e:
-        emit_log(f"❌ Unexpected error: {str(e)}")
-        socketio.emit("processing_error", {"message": str(e)})
+        if check_cancelled():
+            emit_log("🛑 Pipeline cancelled by user")
+            socketio.emit("processing_cancelled", {"message": "Pipeline cancelled"})
+        else:
+            emit_log(f"❌ Unexpected error: {str(e)}")
+            socketio.emit("processing_error", {"message": str(e)})
 
 
 # -------------------------------------------------------
@@ -684,8 +732,8 @@ def index():
 def start_processing():
     """Start the video processing pipeline."""
     try:
-        # Ensure PCC directory exists
-        PCC_DIR.mkdir(parents=True, exist_ok=True)
+        # Ensure temp dir exists
+        TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
         # Handle video file upload (drag-drop OR auto-select from v_raw)
         auto_select_file = request.form.get("auto_select_file", "").strip()
@@ -693,7 +741,7 @@ def start_processing():
             # Auto-select mode: copy from v_raw to video1.mp4
             src = PCC_DIR / "v_raw" / auto_select_file
             if src.exists():
-                dst = PCC_DIR / UPLOAD_VIDEO_NAME
+                dst = TEMP_DIR / UPLOAD_VIDEO_NAME
                 shutil.copy2(str(src), str(dst))
                 emit_log(f"📂 Auto-selected from v_raw: {auto_select_file}")
             else:
@@ -701,7 +749,7 @@ def start_processing():
         elif "video_file" in request.files:
             video_file = request.files["video_file"]
             if video_file and video_file.filename:
-                video_path = PCC_DIR / UPLOAD_VIDEO_NAME
+                video_path = TEMP_DIR / UPLOAD_VIDEO_NAME
                 video_file.save(str(video_path))
                 emit_log(f"📹 Video uploaded: {video_file.filename}")
             else:
@@ -711,7 +759,7 @@ def start_processing():
 
         # Handle video topic (optional weighted context)
         video_topic = request.form.get("video_topic", "").strip()
-        topic_path = PCC_DIR / "video_topic.txt"
+        topic_path = TEMP_DIR / "video_topic.txt"
         if video_topic:
             topic_path.write_text(video_topic, encoding="utf-8")
             emit_log(f"📝 Video topic set: {video_topic}")
@@ -720,7 +768,7 @@ def start_processing():
 
         # Handle target char count (optional)
         target_chars = request.form.get("target_chars", "").strip()
-        tc_path = PCC_DIR / "target_chars.txt"
+        tc_path = TEMP_DIR / "target_chars.txt"
         if target_chars and int(target_chars) > 0:
             tc_path.write_text(target_chars, encoding="utf-8")
             emit_log(f"🔒 Target char count: {target_chars}")
@@ -733,9 +781,9 @@ def start_processing():
         # Handle mute raw audio option
         mute_raw = request.form.get("mute_raw_audio", "").strip()
         if mute_raw == "true":
-            video_path = PCC_DIR / UPLOAD_VIDEO_NAME
+            video_path = TEMP_DIR / UPLOAD_VIDEO_NAME
             if video_path.exists():
-                muted_path = PCC_DIR / "_video1_muted.mp4"
+                muted_path = TEMP_DIR / "_video1_muted.mp4"
                 try:
                     subprocess.run(
                         ["ffmpeg", "-y", "-i", str(video_path), "-an", "-c:v", "copy", str(muted_path)],
@@ -746,10 +794,9 @@ def start_processing():
                 except Exception as e:
                     emit_log(f"⚠ Failed to mute raw audio: {e}")
 
-
         # Handle add music option
         add_music = request.form.get("add_music", "").strip()
-        am_path = PCC_DIR / "add_music.txt"
+        am_path = TEMP_DIR / "add_music.txt"
         if add_music == "true":
             am_path.write_text("true", encoding="utf-8")
             emit_log("🎵 Add background music enabled")
@@ -758,7 +805,7 @@ def start_processing():
 
         # Handle skip analysis option
         skip_analysis = request.form.get("skip_analysis", "").strip()
-        skip_path = PCC_DIR / "skip_analysis.txt"
+        skip_path = TEMP_DIR / "skip_analysis.txt"
         if skip_analysis == "true":
             skip_path.write_text("true", encoding="utf-8")
             emit_log("⏭️ Skip video analysis enabled")
@@ -779,7 +826,7 @@ def start_processing():
 @app.route("/files/<path:filename>")
 def files(filename):
     """Serve output files for download."""
-    return send_from_directory(str(PCC_DIR), filename, as_attachment=False)
+    return send_from_directory(str(TEMP_DIR), filename, as_attachment=False)
 
 
 @app.route("/existing_files")
@@ -792,11 +839,11 @@ def existing_files():
         "heart_all.srt",
         "output_9x16_letterbox.mp4",
     ]:
-        if (PCC_DIR / fname).exists():
+        if (TEMP_DIR / fname).exists():
             existing.append(fname)
 
     maybe_final = final_video_name_from_input_txt()
-    if maybe_final and (PCC_DIR / maybe_final).exists():
+    if maybe_final and (TEMP_DIR / maybe_final).exists():
         existing.append(maybe_final)
 
     return jsonify({"files": existing})
@@ -826,21 +873,21 @@ def move_to_v_fin():
     data = request.get_json(force=True)
     raw_filename = data.get("raw_filename", "").strip()
     final_filename = data.get("final_filename", "").strip()
-    
+
     if not raw_filename or not final_filename:
         return jsonify({"status": "error", "message": "Missing filenames"}), 400
-        
+
     src_raw = PCC_DIR / "v_raw" / raw_filename
-    src_final = PCC_DIR / final_filename
-    
+    src_final = TEMP_DIR / final_filename
+
     if not src_raw.exists():
         return jsonify({"status": "error", "message": "Original file not found in v_raw"}), 404
     if not src_final.exists():
         return jsonify({"status": "error", "message": "Final generated video not found"}), 404
-        
+
     dst_dir = PCC_DIR / "v_fin"
     dst_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Store the final video in v_fin, using the generated name (which includes the title)
     try:
         shutil.copy2(str(src_final), str(dst_dir / final_filename))
@@ -850,6 +897,32 @@ def move_to_v_fin():
         return jsonify({"status": "ok", "message": f"Saved to v_fin and cleaned up v_raw"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/cancel_processing", methods=["POST"])
+def cancel_processing():
+    """Cancel the running pipeline and kill any active subprocess."""
+    global current_subprocess
+    pipeline_cancel.set()
+
+    # Unblock any waiting gates so the pipeline thread can exit
+    analysis_review_gate.set()
+    script_review_gate.set()
+
+    # Kill running subprocess if any
+    with current_subprocess_lock:
+        if current_subprocess and current_subprocess.poll() is None:
+            try:
+                current_subprocess.kill()
+                current_subprocess.wait(timeout=5)
+                emit_log("🛑 Killed running subprocess")
+            except Exception:
+                pass
+            current_subprocess = None
+
+    emit_log("🛑 Pipeline cancellation requested")
+    socketio.emit("processing_cancelled", {"message": "Pipeline cancelled"})
+    return jsonify({"status": "ok", "message": "Cancellation requested"})
 
 
 # -------------------------------------------------------
@@ -895,7 +968,7 @@ def handle_update_title(data):
     """Handle manually edited title from the frontend."""
     new_title = data.get("title", "").strip()
     if new_title:
-        (PCC_DIR / "generated_title.txt").write_text(new_title, encoding="utf-8")
+        (TEMP_DIR / "generated_title.txt").write_text(new_title, encoding="utf-8")
 
 
 if __name__ == "__main__":

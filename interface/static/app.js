@@ -98,6 +98,10 @@ function initializeSocket() {
     onProcessingError(data.message);
   });
 
+  socket.on('processing_cancelled', (data) => {
+    onProcessingCancelled();
+  });
+
   socket.on('script_review', (data) => {
     showScriptForReview(data.script);
   });
@@ -157,8 +161,18 @@ function setupFileUpload() {
   });
 
   // Remove video button
-  elements.removeVideoBtn.addEventListener('click', () => {
-    if (isProcessing) return;
+  elements.removeVideoBtn.addEventListener('click', async () => {
+    // If processing, cancel it first
+    if (isProcessing) {
+      try {
+        await fetch('/cancel_processing', { method: 'POST' });
+        addLog('🛑 Cancelling pipeline...', 'error');
+      } catch (err) {
+        addLog(`⚠ Cancel request failed: ${err.message}`, 'error');
+      }
+    }
+
+    // Reset UI regardless
     videoFile = null;
     autoSelectFile = null;
     elements.videoPreview.src = '';
@@ -181,6 +195,23 @@ function setupFileUpload() {
     // Reset dashed styling
     elements.uploadZone.style.borderStyle = 'dashed';
     elements.uploadZone.style.padding = 'var(--spacing-lg)';
+
+    // Reset processing state
+    resetProcessingState();
+    finalVideoUrl = null;
+    elements.startBtn.querySelector('.btn-icon').textContent = '🚀';
+    elements.startBtn.querySelector('.btn-text').textContent = 'Start Processing';
+    elements.startBtn.classList.remove('btn-download-ready');
+
+    // Reset script editor
+    elements.scriptTextarea.value = '';
+    elements.scriptOverlayText.classList.remove('hidden');
+    elements.scriptOverlayText.textContent = 'Upload a video and start processing to generate a script.';
+    setScriptButtonsDisabled(true);
+    resetAudioState();
+    const titleInput = document.getElementById('scriptTitle');
+    if (titleInput) titleInput.value = '';
+    elements.charCounter.value = 0;
   });
 
   // Mute toggle (controls whether raw video audio is stripped before generation)
@@ -360,7 +391,7 @@ async function startProcessing() {
     elements.scriptTextarea.value = '';
     const titleInput = document.getElementById('scriptTitle');
     if (titleInput) titleInput.value = '';
-    elements.charCounter.value = 0;
+    updateLiveCharCount(0);
     elements.scriptOverlayText.classList.remove('hidden');
     elements.scriptOverlayText.textContent = 'Processing video to generate script...';
     setScriptButtonsDisabled(true);
@@ -378,8 +409,11 @@ async function startProcessing() {
     }
 
     // Include target char count if lock toggle is active
-    if (charLockActive && lockedCharCount > 0) {
-      formData.append('target_chars', lockedCharCount.toString());
+    if (charLockActive) {
+      const targetVal = parseInt(elements.charCounter.value) || 0;
+      if (targetVal > 0) {
+        formData.append('target_chars', targetVal.toString());
+      }
     }
 
     // Include mute raw audio flag
@@ -431,6 +465,11 @@ function updateStepStatus(stepId, status) {
   el.classList.add(status);
 }
 
+function updateLiveCharCount(len) {
+  const liveLabel = document.getElementById('liveCharCount');
+  if (liveLabel) liveLabel.textContent = `(current: ${len})`;
+}
+
 // ==========================================
 // LOG MANAGEMENT
 // ==========================================
@@ -456,8 +495,7 @@ function setupClearLogs() {
 function showAnalysisForReview(analysisText) {
   isAnalysisReview = true;
   elements.scriptTextarea.value = analysisText;
-  const len = analysisText.length;
-  elements.charCounter.value = len;
+  updateLiveCharCount(analysisText.length);
 
   // Hide the center overlay text
   elements.scriptOverlayText.classList.add('hidden');
@@ -485,11 +523,11 @@ function showScriptForReview(scriptText) {
 
   elements.scriptTextarea.value = scriptText;
   const len = scriptText.length;
-  elements.charCounter.value = len;
+  updateLiveCharCount(len);
 
-  // Auto-update locked char count when lock is active
-  if (charLockActive) {
-    lockedCharCount = len;
+  // If lock is ON and user hasn't set a target yet (still 0), auto-populate
+  if (charLockActive && (parseInt(elements.charCounter.value) || 0) === 0) {
+    elements.charCounter.value = len;
   }
 
   // Reset audio state for fresh/modified scripts
@@ -545,7 +583,7 @@ function setScriptButtonsDisabled(disabled) {
 function setupScriptReview() {
   elements.scriptTextarea.addEventListener('input', () => {
     const len = elements.scriptTextarea.value.length;
-    elements.charCounter.value = len;
+    updateLiveCharCount(len);
     if (elements.scriptTextarea.value.trim() === '') {
       elements.scriptOverlayText.classList.remove('hidden');
       elements.scriptOverlayText.textContent = 'Script is empty. Type or regenerate.';
@@ -558,7 +596,10 @@ function setupScriptReview() {
     setScriptButtonsDisabled(true);
     resetAudioState();
     const payload = { action: 'regenerate', text: '' };
-    if (charLockActive && lockedCharCount > 0) payload.target_chars = lockedCharCount;
+    if (charLockActive) {
+      const tc = parseInt(elements.charCounter.value) || 0;
+      if (tc > 0) payload.target_chars = tc;
+    }
     socket.emit('script_review_response', payload);
     elements.scriptOverlayText.classList.remove('hidden');
     elements.scriptOverlayText.textContent = '🔄 Regenerating script...';
@@ -572,7 +613,10 @@ function setupScriptReview() {
 
     // Send 'extend' with the current script text so the backend can extend it by ~50%
     const payload = { action: 'extend', text: elements.scriptTextarea.value };
-    if (charLockActive && lockedCharCount > 0) payload.target_chars = lockedCharCount;
+    if (charLockActive) {
+      const tc = parseInt(elements.charCounter.value) || 0;
+      if (tc > 0) payload.target_chars = tc;
+    }
     socket.emit('script_review_response', payload);
 
     elements.scriptOverlayText.classList.remove('hidden');
@@ -587,7 +631,10 @@ function setupScriptReview() {
 
     // Send 'reduce' with the current script text so the backend can halve it
     const payload = { action: 'reduce', text: elements.scriptTextarea.value };
-    if (charLockActive && lockedCharCount > 0) payload.target_chars = lockedCharCount;
+    if (charLockActive) {
+      const tc = parseInt(elements.charCounter.value) || 0;
+      if (tc > 0) payload.target_chars = tc;
+    }
     socket.emit('script_review_response', payload);
 
     elements.scriptOverlayText.classList.remove('hidden');
@@ -660,12 +707,11 @@ function setupScriptReview() {
   // --- Char lock toggle ---
   elements.charLockToggle.addEventListener('change', () => {
     charLockActive = elements.charLockToggle.checked;
+    elements.charCounter.disabled = !charLockActive;
     if (charLockActive) {
-      // Lock: save current char count
-      lockedCharCount = parseInt(elements.charCounter.value) || 0;
-      addLog(`🔒 Char count locked at ${lockedCharCount}`, 'success');
+      addLog(`🔒 Target char count enabled`, 'success');
     } else {
-      addLog('🔓 Char count unlocked', 'warning');
+      addLog('🔓 Target char count disabled — AI will choose length freely', 'warning');
     }
   });
 }
@@ -716,6 +762,11 @@ function resetProcessingState() {
   elements.startBtn.disabled = false;
   elements.startBtn.querySelector('.btn-text').textContent = 'Start Processing';
   setScriptButtonsDisabled(false); // In case it failed mid-review
+}
+
+function onProcessingCancelled() {
+  addLog('🛑 Pipeline cancelled', 'error');
+  resetProcessingState();
 }
 
 // ==========================================

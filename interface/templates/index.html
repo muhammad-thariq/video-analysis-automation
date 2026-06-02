@@ -180,7 +180,7 @@
                 <div class="config-item">
                     <span class="char-label">🗣️ Add Music</span>
                     <label class="toggle-switch" title="Add background music to the video">
-                        <input type="checkbox" id="addMusicToggle" checked>
+                        <input type="checkbox" id="addMusicToggle">
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
@@ -197,18 +197,15 @@
                 <!-- Chars Count Control -->
                 <div class="config-item char-config">
                     <span class="char-label">🎯 Target script length:</span>
+                    <label class="toggle-switch" title="Lock character count for AI generation">
+                        <input type="checkbox" id="charLockToggle" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
                     <div class="char-input-group">
                         <input type="number" class="char-input" id="charCounter" value="0" min="0" title="Target character count">
                         <span class="char-label">chars</span>
                     </div>
-                    <div class="char-lock-group">
-                        <span class="char-label">(Lock:</span>
-                        <label class="toggle-switch" title="Lock character count for AI generation">
-                            <input type="checkbox" id="charLockToggle" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
-                        <span class="char-label">)</span>
-                    </div>
+                    <span class="char-label" id="liveCharCount" style="opacity:0.5; font-size:0.8rem;">(current: 0)</span>
                 </div>
             </div>
 
@@ -288,7 +285,7 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <p>Made with ❤️ by Thariq | Powered by AI</p>
+            <p>© 2026 Muhammad Thariq Darobi. All rights reserved.</p>
         </footer>
     </div>
 

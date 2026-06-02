@@ -17,7 +17,8 @@ if sys.platform == "win32":
 # Configuration
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 MODEL_NAME = "llama3.1:latest"
-DEFAULT_SYSTEM_PROMPT_FILE = "system_prompt.txt"
+_SCRIPTS_DIR = Path(__file__).parent.resolve()
+DEFAULT_SYSTEM_PROMPT_FILE = str(_SCRIPTS_DIR / "system_prompt.txt")
 INPUT_FILE = "output.txt"
 OUTPUT_FILE = "input.txt"
 

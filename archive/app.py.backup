@@ -10,7 +10,7 @@ from flask_socketio import SocketIO, emit
 # CONFIG
 # -------------------------------------------------------
 PCC_DIR = Path(r"C:\Users\Thariq\Documents\GitHub\HM-Tools-YTAutomation").resolve()
-SCRIPTS_DIR = Path(__file__).parent.resolve()  # HM-Tools-YTAutomation directory
+SCRIPTS_DIR = Path(__file__).parent.resolve()  # video-analysis-automation directory
 UPLOAD_VIDEO_NAME = "video1.mp4"
 UPLOAD_TEXT_NAME = "input.txt"
 
